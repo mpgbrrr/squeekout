@@ -111,6 +111,23 @@ const SPRITES = {
     "......................",
     "......................",
   ],
+  look: [
+    "...k....k.............",
+    "..kokkkkok............",
+    ".kopkookpokkkkkkkk....",
+    "..kooooookooooooook...",
+    ".kooooooookoooooooOk..",
+    ".kwhewwehwkoooooooOOk.",
+    "kwweewweewwkooooooOOk.",
+    ".kwwwppwwwkooooOOOOOk.",
+    ".kcwwwwwwckwwwwwwwwwk.",
+    "..kwwwwwwkwwwwwwwwwk..",
+    "...kkwwkkWWWWWWWWwk...",
+    ".....kkpkkkWWWpkkk....",
+    ".......pk..kkkpk......",
+    "......................",
+    "......................",
+  ],
   sleep: [
     "......................",
     "......................",
@@ -205,9 +222,12 @@ export function createHamster(canvas) {
     if (view.mode === "running") sprite(reduced ? "stand" : RUN[step % 4], 37, 42, fur);
     else if (view.mode === "asleep") sprite(!reduced && Math.floor(t / 1300) % 2 ? "sleep2" : "sleep", 37, 40, fur);
     else {
-      // Paused: bursts of sniffing, then still. Signal lost: stands frozen.
-      const sniffing = !lost && !reduced && t % 2400 < 900 && Math.floor(t / 150) % 2;
-      sprite(sniffing ? "sniff" : "stand", 37, 42, fur);
+      // Paused: a burst of sniffing, a still moment, then he turns and stares at the camera for a bit.
+      // Signal lost: stands frozen.
+      const beat = t % 6500;
+      const looking = !lost && !reduced && beat >= 4600 && beat < 6100;
+      const sniffing = !lost && !reduced && beat < 900 && Math.floor(t / 150) % 2;
+      sprite(looking ? "look" : sniffing ? "sniff" : "stand", 37, 42, fur);
     }
     if (view.mode === "asleep" && !reduced) {
       const k = (t / 1200) % 1;
