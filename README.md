@@ -49,7 +49,7 @@ npm test          # contract tests + a replay of a real night of feed data throu
 
 ### Local end-to-end run
 
-Runs the real watcher against a local chain and a fake feed where the hamster runs for 90 seconds and then stops.
+Runs the real watcher against a local chain and a fake feed where the hamster runs for 90 seconds and then stops. The local chain only makes blocks when there are transactions, so mine one every few seconds (`evm_mine`) to mimic Sepolia.
 
 ```sh
 npx hardhat node                                                     # terminal 1
@@ -59,6 +59,7 @@ CHAIN=hardhat RPC_URL=http://127.0.0.1:8545 SQUEEK_API=http://127.0.0.1:8787 \
   GAME_ADDRESS=<game> WATCHER_PRIVATE_KEY=<hardhat account #1 key> STATE_FILE=./state.json \
   node watcher/watcher.mjs                                           # terminal 3, then open http://localhost:3000
 PLAYER=0 GAME=<game> npx hardhat run scripts/e2e/exit.js --network localhost  # a player gets off
+GAME=<game> npx hardhat run scripts/e2e/report.js --network localhost         # outcome and payouts
 ```
 
 ## Deploy to Sepolia
