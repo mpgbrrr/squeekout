@@ -31,7 +31,8 @@ canvas { width: 100%; aspect-ratio: 4 / 3; image-rendering: pixelated; border-ra
 .hud-count { position: absolute; top: 10px; left: 10px; display: grid; justify-items: start; gap: 2px; padding: 8px 12px;
   background: rgba(13, 17, 38, 0.82); border: 1px solid var(--line); border-radius: 8px; }
 .hud-count b { font-family: var(--pixel); font-size: 1.15rem; line-height: 1.2; color: var(--wheel); font-variant-numeric: tabular-nums; }
-.hud-count span { font-size: 0.72rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
+.hud-count small { font-size: 0.7em; color: var(--ink-2); }
+.hud-count > span { font-size: 0.72rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
 .hud-feed { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; padding: 8px 12px; list-style: none; display: grid; gap: 2px;
   background: linear-gradient(to top, rgba(13, 17, 38, 0.92), rgba(13, 17, 38, 0.72)); border-radius: 0 0 8px 8px;
   font-family: var(--mono); font-size: 0.8rem; line-height: 1.45; }
@@ -104,7 +105,7 @@ th { color: var(--ink-3); font-family: var(--body); font-weight: 700; font-size:
       <h2>Squeektoshi cam</h2>
       <div class="camwrap">
         <canvas id="cam" aria-label="Animated hamster showing whether Squeektoshi is running"></canvas>
-        <div class="hud-count" id="hudCount" hidden><b id="hudOn">0</b><span id="hudLbl">still on</span></div>
+        <div class="hud-count" id="hudCount" hidden><b><span id="hudOn">0</span><small id="hudOf"></small></b><span id="hudLbl">still on</span></div>
         <ol class="hud-feed" id="hudFeed" aria-live="polite" aria-label="Latest game events" hidden></ol>
       </div>
       <div class="cam-status">

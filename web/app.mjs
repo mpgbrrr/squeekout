@@ -80,10 +80,15 @@ function gameOver(events, stoppedAt, caught) {
   return { t, when: "END", text: `Game over: he stopped at +${mmss(stoppedAt)}, ${caught} caught`, kind: "bad" };
 }
 
-// count: players still on (or in the lobby, or caught); events: [{ t, text, kind }]; fmt(t) labels a time.
-function renderHud(count, label, events, fmt) {
+// count: players still on (or in the lobby, or caught) out of total in the game (null in the lobby);
+// events: [{ t, text, kind }]; fmt(t) labels a time.
+function renderHud(count, total, label, events, fmt) {
   $("hudCount").hidden = count == null;
-  if (count != null) { $("hudOn").textContent = String(count); $("hudLbl").textContent = label; }
+  if (count != null) {
+    $("hudOn").textContent = String(count);
+    $("hudOf").textContent = total == null ? "" : `/${total}`;
+    $("hudLbl").textContent = label;
+  }
   const latest = events.filter((e) => e.t != null).sort((a, b) => b.t - a.t).slice(0, 3);
   const key = latest.map((e) => `${e.t}|${e.text}`).join("/");
   $("hudFeed").hidden = latest.length === 0;
@@ -225,7 +230,7 @@ function render() {
   if (start) events.push({ t: start, text: "Game on! Entries closed", kind: "ham" });
   if (lastMove) events.push(gameOver(events, lastMove - start, caught));
   if (status === "Voided") events.push({ t: now, text: "Game voided: everyone refunded", kind: "bad" });
-  renderHud(hudCount, hudLabel, events, (t) => (start && t >= start ? `+${mmss(t - start)}` : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
+  renderHud(hudCount, lobby ? null : inPot, hudLabel, events, (t) => (start && t >= start ? `+${mmss(t - start)}` : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
 
   const mine = me && g.players.find((p) => p.addr.toLowerCase() === me.toLowerCase());
   const inLobby = mine && lobby && !mine.entry.left && !Number(mine.entry.exitTime);
@@ -319,7 +324,7 @@ function renderDemo() {
   }
   const caught = s.result ? players.filter((p) => !s.result.payouts.has(p.id)).length : stillOn;
   if (s.phase === "ended") events.push(gameOver(events, s.lastMove - s.start, caught));
-  renderHud(s.phase === "lobby" ? players.length : s.phase === "live" ? stillOn : caught, s.phase === "lobby" ? "in the lobby" : s.phase === "live" ? "still on" : "caught",
+  renderHud(s.phase === "lobby" ? players.length : s.phase === "live" ? stillOn : caught, s.phase === "lobby" ? null : players.length, s.phase === "lobby" ? "in the lobby" : s.phase === "live" ? "still on" : "caught",
     events, (t) => (s.start != null && t >= s.start ? `+${mmss(t - s.start)}` : "lobby"));
 
   $("gameTitle").textContent = "Demo game";
