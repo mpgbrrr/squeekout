@@ -3,6 +3,7 @@ import { createPublicClient, createWalletClient, custom, http, formatUnits, pars
 import { hardhat, sepolia } from "https://esm.sh/viem@2.21.55/chains";
 import { display, newGameState, readingFromStatus, step } from "/shared/rules.js";
 import { createHamster } from "/hamster.mjs";
+import { createDemo } from "/demo.mjs";
 
 const $ = (id) => document.getElementById(id);
 const cfg = await (await fetch("/config.json")).json();
@@ -19,6 +20,7 @@ const SQK = await pub.readContract({ address: GAME, abi, functionName: "sqk" });
 const Status = ["None", "Lobby", "Live", "Ended", "Settled", "Voided", "RolledOver"];
 
 let wallet = null, me = null, game = null;
+let demo = null; // a practice game in progress takes over the cam and the game card
 const sqk = (v) => `${Number(formatUnits(v, 18)).toLocaleString("en-US", { maximumFractionDigits: 2 })} SQK`;
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -39,6 +41,7 @@ async function pollFeed() {
   }
   const now = Math.floor(Date.now() / 1000);
   rules = step({ ...rules, phase: rules.phase === "done" ? "live" : rules.phase }, reading, now).state;
+  if (demo) return;
   const view = display(rules, reading, now);
   cam.update(view);
   const live = game && Status[Number(game.status)] === "Live";
@@ -83,6 +86,7 @@ async function loadGame() {
 }
 
 function render() {
+  if (demo) return;
   const g = game, status = Status[Number(g.status)], now = Math.floor(Date.now() / 1000);
   const lobby = status === "Lobby";
   const started = ["Live", "Ended", "Settled", "RolledOver"].includes(status);
@@ -144,6 +148,100 @@ function render() {
     $("youStatus").textContent = mine ? (settled && !mine.claimable && !mine.entry.claimed ? "You were still on when he stopped." : "Waiting for the game to finish.")
       : "A new game opens as soon as this one finishes.";
   }
+}
+
+// ---------------------------------------------------------------- demo mode
+
+let demoSpeed = 5, demoTimer = null;
+const LIVE_HELP = `The cartoon follows Squeekchain's live wheel data. Watch the real hamster at <a href="https://squeekchain.com" target="_blank" rel="noopener">squeekchain.com</a>.`;
+const demoSqk = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} SQK`;
+
+function startDemo() {
+  demo = createDemo();
+  $("demoBanner").hidden = false;
+  $("speed").hidden = false;
+  $("demoToggle").textContent = "Back to the real game";
+  $("modeHelp").textContent = "Demo: this hamster is simulated, with random runs and breaks like the real Squeektoshi's.";
+  $("leave").hidden = true;
+  $("finalize").hidden = true;
+  msg("");
+  clearInterval(demoTimer);
+  demoTimer = setInterval(() => { demo.tick(0.25 * demoSpeed); renderDemo(); }, 250);
+  renderDemo();
+}
+
+function stopDemo() {
+  clearInterval(demoTimer);
+  demoTimer = null;
+  demo = null;
+  $("demoBanner").hidden = true;
+  $("speed").hidden = true;
+  $("demoToggle").textContent = "Play a demo game";
+  $("modeHelp").innerHTML = LIVE_HELP;
+  pollFeed();
+  if (game) render(); else loadGame();
+}
+
+function renderDemo() {
+  const s = demo.state, view = demo.view(), players = demo.players, you = players[0];
+  const since = (t) => `+${mmss(Math.max(0, t))}`;
+  cam.update(view);
+  $("mode").textContent = {
+    running: `Running · ${Math.round(view.rpm || 0)} rpm`,
+    paused: s.phase === "live" ? "Paused · game ends in" : "Resting",
+    asleep: s.phase === "ended" ? "Stopped · game over" : "Resting",
+    "signal-lost": "Signal lost · clock paused",
+  }[view.mode];
+  $("mode").className = `mode ${view.mode}`;
+  $("countdown").textContent = view.mode === "paused" && s.phase === "live" ? mmss(view.remaining) : "";
+
+  $("gameTitle").textContent = "Demo game";
+  $("gameStatus").textContent = { lobby: "Lobby open: entries close when he starts running", live: "Live: the wheel is turning", ended: "Game over" }[s.phase];
+  $("fBuyIn").textContent = demoSqk(demo.buyIn);
+  $("fPot").textContent = demoSqk(demo.buyIn * players.length);
+  $("fPlayers").textContent = String(players.length);
+  if (s.phase === "lobby") { $("fClockLbl").textContent = "Starts"; $("fClock").textContent = "when he runs"; }
+  else if (s.phase === "live") { $("fClockLbl").textContent = "Game time"; $("fClock").textContent = mmss(s.t - s.start); }
+  else { $("fClockLbl").textContent = "He stopped at"; $("fClock").textContent = since(s.lastMove - s.start); }
+
+  const payout = (p) => s.result?.payouts.get(p.id)?.total;
+  // Who got off first at the top, then anyone on their way off, then everyone still on.
+  const order = (p) => (p.exit != null ? p.exit : p.landsAt != null ? 1e9 : 2e9);
+  $("players").innerHTML = [...players].sort((a, b) => order(a) - order(b)).map((p) => {
+    const off = p.exit != null ? since(p.exit) : p.landsAt != null ? "getting off…" : "still on";
+    const pay = s.phase !== "ended" ? "—" : payout(p) ? demoSqk(payout(p)) : "caught";
+    return `<tr><td>${p.name}</td><td>${off}</td><td>${pay}</td></tr>`;
+  }).join("");
+
+  const btn = $("mainAction");
+  btn.disabled = false;
+  if (s.phase === "lobby") {
+    btn.textContent = "Waiting for him to run"; btn.disabled = true;
+    $("youStatus").textContent = `You're in for ${demoSqk(demo.buyIn)} with ${players.length - 1} other players. The game starts the moment Squeektoshi runs.`;
+  } else if (s.phase === "live" && you.exit == null && you.landsAt == null) {
+    btn.textContent = "Get off the wheel"; btn.onclick = () => { demo.exitYou(); renderDemo(); };
+    const est = demo.ifYouGotOffNow();
+    $("youStatus").textContent = `If he stopped right now and you'd got off, you'd win about ${demoSqk(est)} (${(est / demo.buyIn).toFixed(2)}×). `
+      + "Everyone who stays on longer than you will take a bigger share.";
+  } else if (s.phase === "live") {
+    btn.textContent = you.exit == null ? "Getting off…" : "You got off"; btn.disabled = true;
+    $("youStatus").textContent = you.exit == null ? "Your exit is waiting for the next block." : `You got off at ${since(you.exit)}. Now see who gets caught.`;
+  } else {
+    btn.textContent = "Play again"; btn.onclick = startDemo;
+    const won = payout(you), jackpot = s.result.payouts.get("you")?.jackpot;
+    $("youStatus").textContent = s.result.rolledOver ? "Everyone was caught, so the pot rolls into the next game."
+      : won ? `You got off at ${since(you.exit)} and won ${demoSqk(won)} (${(won / demo.buyIn).toFixed(2)}×)${jackpot ? ", including a jackpot share" : ""}.`
+      : you.exit != null ? `Too late: you got off at ${since(you.exit)}, but he'd already stopped at ${since(s.lastMove - s.start)}. Caught.`
+      : "Caught! You were still on the wheel when he stopped.";
+  }
+}
+
+$("demoToggle").onclick = () => (demo ? stopDemo() : startDemo());
+for (const b of $("speed").querySelectorAll("button")) {
+  b.onclick = () => {
+    demoSpeed = Number(b.dataset.speed);
+    for (const o of $("speed").querySelectorAll("button")) o.setAttribute("aria-pressed", String(o === b));
+  };
 }
 
 // ---------------------------------------------------------------- wallet actions

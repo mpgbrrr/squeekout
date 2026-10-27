@@ -5,7 +5,7 @@
   "description": "Testnet chicken game on Squeekchain: stay on the wheel, exit before the hamster stops.",
   "scripts": {
     "compile": "hardhat compile && node scripts/export-abi.js",
-    "test": "hardhat test && node --test test/rules.test.mjs",
+    "test": "hardhat test && node --test test/rules.test.mjs test/payouts.test.mjs",
     "watcher": "node watcher/watcher.mjs",
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "game:sepolia": "hardhat run scripts/create-game.js --network sepolia"
