@@ -2,7 +2,7 @@
 
 A testnet game of chicken on [Squeekchain](https://docs.squeekchain.com/), the blockchain powered by Squeektoshi the hamster running on his wheel.
 
-Everyone buys in with SQK and stays "on the wheel" while the hamster runs. Get off whenever you like: the longer you stay, the bigger your share. Once the wheel has been still for 3 minutes, the game ends at his last movement. Anyone still on, or who got off too late, is caught and gets nothing.
+Everyone buys in with SQK while the lobby is open. The lobby closes the moment the hamster starts running, and you're on the wheel. Get off whenever you like: the longer you stay, the bigger your share. Once the wheel has been still for 3 minutes, the game ends at his last movement. Anyone still on, or who got off too late, is caught and gets nothing. When a game finishes, the next one opens automatically.
 
 **Sepolia testnet only.** Testnet SQK has no value.
 
@@ -10,7 +10,10 @@ Everyone buys in with SQK and stays "on the wheel" while the hamster runs. Get o
 
 | Rule | Value |
 |---|---|
-| Game starts | At Squeektoshi's first movement after the lobby closes |
+| Lobby | Always one open. Enter, or leave with an immediate refund, until Squeektoshi starts running |
+| Game starts | At his first movement once the lobby has been open at least **5 minutes** |
+| Late entries | An entry that lands after his first movement (before the watcher posts the start) is refunded |
+| Next game | Opens automatically as soon as the previous one finishes |
 | Game ends | When the wheel has been still for **3 minutes**, at his last movement |
 | Grace | Exits up to **12 s** (one Ethereum block) after his last movement still win |
 | Payout curve | Your weight grows **+25% every 2 minutes** you stay in, smoothly to the second |
@@ -20,8 +23,7 @@ Everyone buys in with SQK and stays "on the wheel" while the hamster runs. Get o
 | House fee | None |
 | Payout bounty | A flat SQK amount to whoever finalizes the game, capped at **1%** of the pot |
 | Feed outage | If Squeekchain's live feed drops: the game can't end while it's down. When it returns, the game carries on if the hamster didn't run during the gap, or if the gap was too short to hide a 3-minute stop. Otherwise the game is **voided and everyone refunded**. An outage over **30 minutes** also voids it. |
-| Leaving early | Leaving the lobby, or getting off before the game starts, is a full refund |
-| Backstop | If a game can't finish within 7 days of its lobby closing, anyone can refund it |
+| Backstop | If a game can't finish within 7 days of its earliest start, anyone can refund it |
 
 ## How it works
 
@@ -53,7 +55,7 @@ Runs the real watcher against a local chain and a fake feed where the hamster ru
 
 ```sh
 npx hardhat node                                                     # terminal 1
-CLOSE_IN=40 npx hardhat run scripts/e2e/setup.js --network localhost  # prints the game address and lobby close time
+CLOSE_IN=40 npx hardhat run scripts/e2e/setup.js --network localhost  # prints the game address and earliest start
 node scripts/e2e/feed.mjs <run-from-unix> <run-to-unix>              # terminal 2: fake hamster
 CHAIN=hardhat RPC_URL=http://127.0.0.1:8545 SQUEEK_API=http://127.0.0.1:8787 \
   GAME_ADDRESS=<game> WATCHER_PRIVATE_KEY=<hardhat account #1 key> STATE_FILE=./state.json \
@@ -75,9 +77,7 @@ GAME=<game> npx hardhat run scripts/e2e/report.js --network localhost         # 
    - Variables: `GAME_ADDRESS`, `WATCHER_PRIVATE_KEY`, and optionally `RPC_URL` (a dedicated Sepolia RPC is more reliable than the public default).
    - Add a **volume** mounted at `/data`, so the watcher's game state survives restarts. Without it, a restart during a live game voids that game.
    - Generate a public domain: that URL is the web app.
-4. **Open a game.**
-   `DEPLOYER_PRIVATE_KEY=<deployer key> LOBBY_CLOSE=2026-10-28T21:00:00Z BUY_IN=100 npm run game:sepolia`
-   Squeektoshi usually runs between about 21:00 and 06:00 UTC.
+4. **Games open themselves.** Deploying saves the default rules (buy-in, bounty, minimum players, 5-minute minimum lobby), and the watcher opens the first game as soon as it starts, then a new one whenever a game finishes. To open an extra game by hand: `DEPLOYER_PRIVATE_KEY=<deployer key> EARLIEST_START=5 npm run game:sepolia`. Squeektoshi usually runs between about 21:00 and 06:00 UTC.
 
 ### Squeekchain contracts
 

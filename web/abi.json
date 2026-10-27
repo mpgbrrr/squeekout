@@ -42,12 +42,12 @@
   },
   {
     "inputs": [],
-    "name": "LobbyClosed",
+    "name": "GameInProgress",
     "type": "error"
   },
   {
     "inputs": [],
-    "name": "LobbyOpen",
+    "name": "LateEntry",
     "type": "error"
   },
   {
@@ -148,6 +148,77 @@
     "anonymous": false,
     "inputs": [
       {
+        "components": [
+          {
+            "internalType": "uint128",
+            "name": "buyIn",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint64",
+            "name": "earliestStart",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "idleWindow",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "grace",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "curveStep",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint16",
+            "name": "jackpotBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "jackpotGroupBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint128",
+            "name": "bountyFlat",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint16",
+            "name": "minPlayers",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "maxPlayers",
+            "type": "uint16"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct SqueekChicken.Params",
+        "name": "params",
+        "type": "tuple"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "minLobby",
+        "type": "uint32"
+      }
+    ],
+    "name": "DefaultsSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": true,
         "internalType": "uint256",
         "name": "id",
@@ -231,7 +302,7 @@
           },
           {
             "internalType": "uint64",
-            "name": "lobbyClose",
+            "name": "earliestStart",
             "type": "uint64"
           },
           {
@@ -610,7 +681,7 @@
           },
           {
             "internalType": "uint64",
-            "name": "lobbyClose",
+            "name": "earliestStart",
             "type": "uint64"
           },
           {
@@ -668,6 +739,64 @@
       }
     ],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "defaults",
+    "outputs": [
+      {
+        "internalType": "uint128",
+        "name": "buyIn",
+        "type": "uint128"
+      },
+      {
+        "internalType": "uint64",
+        "name": "earliestStart",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint32",
+        "name": "idleWindow",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "grace",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "curveStep",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint16",
+        "name": "jackpotBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "jackpotGroupBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint128",
+        "name": "bountyFlat",
+        "type": "uint128"
+      },
+      {
+        "internalType": "uint16",
+        "name": "minPlayers",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "maxPlayers",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -745,6 +874,11 @@
         "internalType": "bool",
         "name": "claimed",
         "type": "bool"
+      },
+      {
+        "internalType": "uint64",
+        "name": "enteredAt",
+        "type": "uint64"
       },
       {
         "internalType": "uint64",
@@ -834,7 +968,7 @@
               },
               {
                 "internalType": "uint64",
-                "name": "lobbyClose",
+                "name": "earliestStart",
                 "type": "uint64"
               },
               {
@@ -975,6 +1109,32 @@
   },
   {
     "inputs": [],
+    "name": "minLobby",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "openNextGame",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "owner",
     "outputs": [
       {
@@ -1058,6 +1218,76 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint128",
+            "name": "buyIn",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint64",
+            "name": "earliestStart",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "idleWindow",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "grace",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "curveStep",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint16",
+            "name": "jackpotBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "jackpotGroupBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint128",
+            "name": "bountyFlat",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint16",
+            "name": "minPlayers",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "maxPlayers",
+            "type": "uint16"
+          }
+        ],
+        "internalType": "struct SqueekChicken.Params",
+        "name": "p",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint32",
+        "name": "minLobby_",
+        "type": "uint32"
+      }
+    ],
+    "name": "setDefaults",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

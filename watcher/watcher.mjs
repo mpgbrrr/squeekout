@@ -119,7 +119,7 @@ async function refreshGames() {
     const key = String(id);
     if (status === "Lobby" || status === "Live" || status === "Ended") {
       if (!saved.games[key]) {
-        const rules = newGameState(Number(g.p.lobbyClose));
+        const rules = newGameState(Number(g.p.earliestStart));
         if (status !== "Lobby") {
           // Already started but we have no history for it (for example a fresh volume).
           rules.phase = status === "Live" ? "live" : "done";
@@ -174,6 +174,24 @@ async function tryFinalize(id) {
   }
 }
 
+// Keeps a game always open: when the latest game has finished (or there is none), open the next one
+// with the contract's default rules. A no-op until the owner has set those defaults.
+async function openNextIfIdle() {
+  const count = Number(await pub.readContract({ address: GAME, abi, functionName: "gameCount" }));
+  if (count > 0) {
+    const g = await pub.readContract({ address: GAME, abi, functionName: "getGame", args: [BigInt(count)] });
+    if (!["Settled", "Voided", "RolledOver"].includes(Status[Number(g.status)])) return;
+  }
+  const defaults = await pub.readContract({ address: GAME, abi, functionName: "defaults" });
+  if (!defaults[0]) return; // buyIn 0: defaults not set yet
+  try {
+    const hash = await send("openNextGame", []);
+    log("opened", { game: count + 1, tx: hash });
+  } catch (e) {
+    log("open_retry", { error: String(e.shortMessage || e.message || e) });
+  }
+}
+
 // ---------------------------------------------------------------- main loop
 
 let busy = false;
@@ -201,6 +219,7 @@ async function chainWork() {
       if (game.queue.length) await act(id, game);
       if (game.status === "Ended" && !game.queue.length) await tryFinalize(id);
     }
+    await openNextIfIdle();
     persist();
   } catch (e) {
     log("chain_error", { error: String(e.shortMessage || e.message || e) });

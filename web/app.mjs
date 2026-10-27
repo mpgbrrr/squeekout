@@ -78,58 +78,71 @@ async function loadGame() {
     results = await Promise.all(calls.map((c) => pub.readContract(c))); // chains without Multicall3
   }
   game = { id, ...g, players: players.map((p, i) => ({ addr: p, entry: results[2 * i], claimable: results[2 * i + 1] })) };
-  if (rules.lobbyClose !== Number(g.p.lobbyClose)) rules = { ...rules, lobbyClose: Number(g.p.lobbyClose) };
+  if (rules.earliestStart !== Number(g.p.earliestStart)) rules = { ...rules, earliestStart: Number(g.p.earliestStart) };
   render();
 }
 
 function render() {
   const g = game, status = Status[Number(g.status)], now = Math.floor(Date.now() / 1000);
-  const lobbyOpen = status === "Lobby" && now < Number(g.p.lobbyClose);
+  const lobby = status === "Lobby";
+  const started = ["Live", "Ended", "Settled", "RolledOver"].includes(status);
+  const start = Number(g.startTime);
+  const late = (e) => started && Number(e.enteredAt) > start;
+  const leftEarly = (e) => started && Number(e.exitTime) && Number(e.exitTime) < start;
   $("gameTitle").textContent = `Game #${g.id}`;
   $("gameStatus").textContent = {
-    Lobby: lobbyOpen ? "Lobby open" : "Waiting for the hamster",
+    Lobby: "Lobby open: entries close when Squeektoshi starts running",
     Live: "Live: the wheel is turning", Ended: "Game over: finalizing payouts", Settled: "Paid out",
     Voided: "Voided: everyone refunded", RolledOver: "Everyone caught: pot rolled over",
   }[status];
-  const inGame = g.players.filter((p) => !p.entry.left).length;
+  const inPot = g.players.filter((p) => !p.entry.left && !late(p.entry) && !leftEarly(p.entry)).length;
   $("fBuyIn").textContent = sqk(g.p.buyIn);
-  $("fPot").textContent = sqk(g.p.buyIn * BigInt(inGame) + g.rolloverIn);
-  $("fPlayers").textContent = String(inGame);
-  if (lobbyOpen) { $("fClockLbl").textContent = "Lobby closes in"; $("fClock").textContent = mmss(Number(g.p.lobbyClose) - now); }
-  else if (status === "Live") { $("fClockLbl").textContent = "Started at"; $("fClock").textContent = clock(Number(g.startTime)); }
+  $("fPot").textContent = sqk(g.p.buyIn * BigInt(inPot) + g.rolloverIn);
+  $("fPlayers").textContent = String(inPot);
+  const earliest = Number(g.p.earliestStart);
+  if (lobby && now < earliest) { $("fClockLbl").textContent = "Can start in"; $("fClock").textContent = mmss(earliest - now); }
+  else if (lobby) { $("fClockLbl").textContent = "Starts"; $("fClock").textContent = "when he runs"; }
+  else if (status === "Live") { $("fClockLbl").textContent = "Started at"; $("fClock").textContent = clock(start); }
   else if (Number(g.lastMove)) { $("fClockLbl").textContent = "Hamster stopped at"; $("fClock").textContent = clock(Number(g.lastMove)); }
-  else { $("fClockLbl").textContent = "Lobby closed at"; $("fClock").textContent = clock(Number(g.p.lobbyClose)); }
+  else { $("fClockLbl").textContent = "Started at"; $("fClock").textContent = start ? clock(start) : "—"; }
 
   const settled = status === "Settled";
   $("players").innerHTML = g.players.length ? g.players.map((p) => {
     const e = p.entry;
-    const off = e.left ? "left the lobby" : Number(e.exitTime) ? (Number(g.startTime) ? `+${mmss(Math.max(0, Number(e.exitTime) - Number(g.startTime)))}` : clock(Number(e.exitTime))) : "still on";
+    const off = e.left ? "left the lobby" : late(e) ? "joined after the start (refunded)" : leftEarly(e) ? "left before the start (refunded)"
+      : Number(e.exitTime) ? (start ? `+${mmss(Math.max(0, Number(e.exitTime) - start))}` : clock(Number(e.exitTime))) : "still on";
     const pay = e.claimed ? "claimed" : p.claimable > 0n ? sqk(p.claimable) : settled ? "caught" : "—";
     return `<tr><td>${short(p.addr)}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="muted">No players yet.</td></tr>`;
 
   const mine = me && g.players.find((p) => p.addr.toLowerCase() === me.toLowerCase());
+  const inLobby = mine && lobby && !mine.entry.left && !Number(mine.entry.exitTime);
   const btn = $("mainAction");
-  $("leave").hidden = !(mine && lobbyOpen && !mine.entry.left);
+  $("leave").hidden = !inLobby;
   $("finalize").hidden = status !== "Ended";
   btn.disabled = false;
   if (!me) { btn.textContent = "Connect to play"; btn.onclick = connect; $("youStatus").textContent = "Connect your wallet to play."; return; }
   if (mine && mine.claimable > 0n) {
     btn.textContent = `Claim ${sqk(mine.claimable)}`; btn.onclick = () => tx("claim", [g.id]);
-    $("youStatus").textContent = status === "Voided" ? "This game was voided, so your buy-in is refunded." : "You got off in time.";
-  } else if (lobbyOpen && (!mine || mine.entry.left)) {
+    $("youStatus").textContent = status === "Voided" ? "This game was voided, so your buy-in is refunded."
+      : late(mine.entry) ? "Your entry landed after Squeektoshi started running, so it's refunded."
+      : leftEarly(mine.entry) ? "You left before the start, so your buy-in is refunded." : "You got off in time.";
+  } else if (lobby && (!mine || mine.entry.left)) {
     btn.textContent = `Enter for ${sqk(g.p.buyIn)}`; btn.onclick = () => enter(g);
-    $("youStatus").textContent = "Buy in, then get off the wheel before the hamster stops. The longer you stay, the more you win.";
-  } else if (mine && !mine.entry.left && !Number(mine.entry.exitTime) && (status === "Live" || (status === "Lobby" && !lobbyOpen))) {
-    btn.textContent = "Get off the wheel"; btn.onclick = () => tx("exit", [g.id]);
-    $("youStatus").textContent = status === "Live" ? "You're on the wheel. Get off while he's still running." : "You're in. Getting off before the hamster starts is a full refund.";
-  } else if (mine && lobbyOpen) {
+    $("youStatus").textContent = "Buy in before Squeektoshi starts running. Then get off the wheel before he stops: the longer you stay, the more you win.";
+  } else if (inLobby) {
     btn.textContent = "You're in"; btn.disabled = true;
-    $("youStatus").textContent = "You're in. The game starts when Squeektoshi runs after the lobby closes.";
+    $("youStatus").textContent = now < earliest
+      ? `You're in. The game starts at his first run after ${clock(earliest)}.`
+      : "You're in. The game starts the moment Squeektoshi runs.";
+  } else if (mine && status === "Live" && !Number(mine.entry.exitTime) && !late(mine.entry)) {
+    btn.textContent = "Get off the wheel"; btn.onclick = () => tx("exit", [g.id]);
+    $("youStatus").textContent = "You're on the wheel. Get off while he's still running.";
   } else {
     btn.textContent = mine ? (Number(mine.entry.exitTime) ? "You got off" : "Caught on the wheel") : "Watching";
     btn.disabled = true;
-    $("youStatus").textContent = mine ? (settled && !mine.claimable && !mine.entry.claimed ? "You were still on when he stopped." : "Waiting for the game to finish.") : "Wait for the next game's lobby to join.";
+    $("youStatus").textContent = mine ? (settled && !mine.claimable && !mine.entry.claimed ? "You were still on when he stopped." : "Waiting for the game to finish.")
+      : "A new game opens as soon as this one finishes.";
   }
 }
 

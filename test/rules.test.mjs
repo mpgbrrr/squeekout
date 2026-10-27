@@ -10,9 +10,9 @@ const rows = readFileSync(new URL("./fixtures/feed-2026-10-26-night.jsonl", impo
   .map(([seenAt, observedAt, counter, fresh, coreStatus, epoch]) => ({ seenAt, observedAt, counter, fresh, coreStatus, epoch, rpm: 0 }));
 const utc = (s) => Math.floor(Date.parse(s) / 1000);
 
-function replay(lobbyClose, until, overrides = {}) {
+function replay(earliestStart, until, overrides = {}) {
   const cfg = { ...DEFAULTS, ...overrides };
-  let state = newGameState(lobbyClose);
+  let state = newGameState(earliestStart);
   const decisions = [];
   let i = 0, latest = null;
   for (let now = rows[0].seenAt; now <= until; now++) {

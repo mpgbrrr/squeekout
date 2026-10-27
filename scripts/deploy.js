@@ -3,6 +3,7 @@
 //   WATCHER_ADDRESS       address of the watcher service's key
 //   SQK_ADDRESS           optional; defaults to the SQK of Squeekchain's 26 Oct 2026 Sepolia deployment
 //   SQUEEK_CORE           optional; the SqueekCore that the settled-round check reads (set "off" to skip)
+//   BUY_IN, BOUNTY        default game settings in SQK (100 and 5); MIN_PLAYERS (2); MIN_LOBBY seconds (300)
 // Usage: npx hardhat run scripts/deploy.js --network sepolia
 const fs = require("node:fs");
 const path = require("node:path");
@@ -27,6 +28,22 @@ async function main() {
     await (await game.setRoundCheck(core, true)).wait();
     console.log(`Settled-round check on, reading SqueekCore ${core}`);
   }
+  // The agreed rules. The watcher opens each new game with these as soon as the previous one finishes.
+  const env = process.env;
+  const minLobby = Number(env.MIN_LOBBY || 300);
+  await (await game.setDefaults({
+    buyIn: ethers.parseEther(env.BUY_IN || "100"),
+    earliestStart: 0, // set per game: opening time + minLobby
+    idleWindow: 180, // the wheel still for 3 minutes ends the game
+    grace: 12, // one Ethereum block
+    curveStep: 120, // +25% weight per 2 minutes
+    jackpotBps: 2000, // 20% jackpot
+    jackpotGroupBps: 1000, // shared by the last 10% of winners
+    bountyFlat: ethers.parseEther(env.BOUNTY || "5"),
+    minPlayers: Number(env.MIN_PLAYERS || 2),
+    maxPlayers: 200,
+  }, minLobby)).wait();
+  console.log(`Default game settings saved; lobbies stay open at least ${minLobby} s`);
   const record = {
     network: network.name, chainId: Number(network.config.chainId || 31337), address: game.target, sqk, watcher,
     roundCheckCore: core === "off" ? null : core,

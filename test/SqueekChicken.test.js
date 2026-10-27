@@ -21,7 +21,7 @@ async function deploy() {
 async function createGame(game, over = {}) {
   const now = await time.latest();
   const p = {
-    buyIn: BUY, lobbyClose: now + 3600, idleWindow: 180, grace: 12, curveStep: 120,
+    buyIn: BUY, earliestStart: now + 3600, idleWindow: 180, grace: 12, curveStep: 120,
     jackpotBps: 2000, jackpotGroupBps: 1000, bountyFlat: BOUNTY, minPlayers: 3, maxPlayers: 200, ...over,
   };
   await game.createGame(p);
@@ -41,7 +41,7 @@ async function playedGame() {
   const { id, p } = await createGame(game);
   const ten = players.slice(0, 10);
   for (const pl of ten) await game.connect(pl).enter(id);
-  const start = p.lobbyClose + 60;
+  const start = p.earliestStart + 60;
   await at(start + 5, () => game.connect(watcher).postStart(id, start));
   const lastMove = start + 7 * 60 + 5;
   const exitTimes = [1, 2, 3, 4, 5, 6].map((m) => start + m * 60);
@@ -93,7 +93,7 @@ describe("SqueekChicken", () => {
       const { game, watcher, keeper, players, sqk } = f;
       const { id, p } = await createGame(game, { bountyFlat: ethers.parseEther("500") });
       for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
-      const start = p.lobbyClose;
+      const start = p.earliestStart;
       await at(start + 1, () => game.connect(watcher).postStart(id, start));
       await at(start + 30, () => game.connect(players[0]).exit(id));
       await at(start + 400, () => game.connect(watcher).postEnd(id, start + 100, 1));
@@ -113,12 +113,12 @@ describe("SqueekChicken", () => {
       expect((await game.getGame(id)).entrants).to.equal(0n);
     });
 
-    it("refunds exits made after the lobby closed but before the hamster started", async () => {
+    it("refunds exits made before the hamster started", async () => {
       const { game, watcher, players, sqk } = await loadFixture(deploy);
       const { id, p } = await createGame(game);
       for (const pl of players.slice(0, 4)) await game.connect(pl).enter(id);
-      await at(p.lobbyClose + 10, () => game.connect(players[0]).exit(id));
-      const start = p.lobbyClose + 100;
+      await at(p.earliestStart + 10, () => game.connect(players[0]).exit(id));
+      const start = p.earliestStart + 100;
       await at(start + 1, () => game.connect(watcher).postStart(id, start));
       const before = await sqk.balanceOf(players[0].address);
       await game.connect(players[0]).claim(id);
@@ -129,7 +129,7 @@ describe("SqueekChicken", () => {
       const { game, watcher, players } = await loadFixture(deploy);
       const { id, p } = await createGame(game);
       for (const pl of players.slice(0, 2)) await game.connect(pl).enter(id);
-      await at(p.lobbyClose + 1, () => game.connect(watcher).postStart(id, p.lobbyClose));
+      await at(p.earliestStart + 1, () => game.connect(watcher).postStart(id, p.earliestStart));
       expect((await game.getGame(id)).status).to.equal(Status.Voided);
       expect(await game.claimable(id, players[0].address)).to.equal(BUY);
     });
@@ -156,7 +156,7 @@ describe("SqueekChicken", () => {
       const { game, watcher, players } = await loadFixture(deploy);
       const { id, p } = await createGame(game);
       for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
-      await at(p.lobbyClose + 1, () => game.connect(watcher).postStart(id, p.lobbyClose));
+      await at(p.earliestStart + 1, () => game.connect(watcher).postStart(id, p.earliestStart));
       await game.connect(players[0]).exit(id);
       await game.connect(watcher).voidGame(id, "feed outage, hamster ran during the gap");
       for (const pl of players.slice(0, 3)) expect(await game.claimable(id, pl.address)).to.equal(BUY);
@@ -166,7 +166,7 @@ describe("SqueekChicken", () => {
       const { game, watcher, keeper, players } = await loadFixture(deploy);
       const first = await createGame(game);
       for (const pl of players.slice(0, 3)) await game.connect(pl).enter(first.id);
-      const s1 = first.p.lobbyClose;
+      const s1 = first.p.earliestStart;
       await at(s1 + 1, () => game.connect(watcher).postStart(first.id, s1));
       await at(s1 + 400, () => game.connect(watcher).postEnd(first.id, s1 + 100, 1));
       await game.connect(keeper).finalize(first.id);
@@ -177,7 +177,7 @@ describe("SqueekChicken", () => {
       expect((await game.getGame(second.id)).rolloverIn).to.equal(rolled);
       expect(await game.rolloverPool()).to.equal(0n);
       for (const pl of players.slice(3, 6)) await game.connect(pl).enter(second.id);
-      const s2 = second.p.lobbyClose;
+      const s2 = second.p.earliestStart;
       await at(s2 + 1, () => game.connect(watcher).postStart(second.id, s2));
       await at(s2 + 50, () => game.connect(players[3]).exit(second.id));
       await at(s2 + 400, () => game.connect(watcher).postEnd(second.id, s2 + 100, 1));
@@ -191,7 +191,7 @@ describe("SqueekChicken", () => {
       const { id, p } = await createGame(game);
       for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
       await expect(game.connect(keeper).backstop(id)).to.be.revertedWithCustomError(game, "BadTime");
-      await time.increaseTo(p.lobbyClose + 7 * 24 * 3600);
+      await time.increaseTo(p.earliestStart + 7 * 24 * 3600);
       await game.connect(keeper).backstop(id);
       expect(await game.claimable(id, players[1].address)).to.equal(BUY);
     });
@@ -201,8 +201,8 @@ describe("SqueekChicken", () => {
     it("only lets the watcher post start, end and voids", async () => {
       const { game, players } = await loadFixture(deploy);
       const { id, p } = await createGame(game);
-      await time.increaseTo(p.lobbyClose + 1);
-      await expect(game.connect(players[0]).postStart(id, p.lobbyClose)).to.be.revertedWithCustomError(game, "NotWatcher");
+      await time.increaseTo(p.earliestStart + 1);
+      await expect(game.connect(players[0]).postStart(id, p.earliestStart)).to.be.revertedWithCustomError(game, "NotWatcher");
       await expect(game.connect(players[0]).voidGame(id, "x")).to.be.revertedWithCustomError(game, "NotWatcher");
     });
 
@@ -210,7 +210,7 @@ describe("SqueekChicken", () => {
       const { game, watcher, players } = await loadFixture(deploy);
       const { id, p } = await createGame(game);
       for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
-      const start = p.lobbyClose;
+      const start = p.earliestStart;
       await at(start + 1, () => game.connect(watcher).postStart(id, start));
       await at(start + 279, () => expect(game.connect(watcher).postEnd(id, start + 100, 1)).to.be.revertedWithCustomError(game, "BadTime"));
     });
@@ -224,7 +224,7 @@ describe("SqueekChicken", () => {
   describe("settled-round check", () => {
     async function checkedGame(counter) {
       const f = await playedGameWithCounter(counter);
-      const genesis = f.p.lobbyClose - 6000; // 10 rounds before the lobby closed
+      const genesis = f.p.earliestStart - 6000; // 10 rounds before the lobby closed
       const core = await (await ethers.getContractFactory("MockSqueekCore")).deploy(genesis);
       await f.game.setRoundCheck(core.target, true);
       const r = BigInt(Math.floor((f.lastMove - genesis) / 600) + 1);
@@ -235,7 +235,7 @@ describe("SqueekChicken", () => {
       const { game, watcher, players } = f;
       const { id, p } = await createGame(game);
       for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
-      const start = p.lobbyClose;
+      const start = p.earliestStart;
       await at(start + 1, () => game.connect(watcher).postStart(id, start));
       await at(start + 50, () => game.connect(players[0]).exit(id));
       const lastMove = start + 100;
@@ -265,6 +265,93 @@ describe("SqueekChicken", () => {
       await core.setWorkAfter(r, 600);
       await game.connect(keeper).finalize(id);
       expect((await game.getGame(id)).status).to.equal(Status.Voided);
+    });
+  });
+
+  describe("lobby open until the hamster runs", () => {
+    it("accepts entries after the minimum lobby time, until the start is posted", async () => {
+      const { game, watcher, players } = await loadFixture(deploy);
+      const { id, p } = await createGame(game);
+      for (const pl of players.slice(0, 2)) await game.connect(pl).enter(id);
+      await at(p.earliestStart + 600, () => game.connect(players[2]).enter(id)); // 10 minutes after the minimum
+      await at(p.earliestStart + 700, () => game.connect(watcher).postStart(id, p.earliestStart + 690));
+      await expect(game.connect(players[3]).enter(id)).to.be.revertedWithCustomError(game, "WrongStatus");
+      expect((await game.getGame(id)).status).to.equal(Status.Live);
+    });
+
+    it("refunds an entry that landed after his first movement and keeps it out of the pot and winners", async () => {
+      const { game, watcher, keeper, players, sqk } = await loadFixture(deploy);
+      const { id, p } = await createGame(game);
+      const [a, b, c, late] = players;
+      for (const pl of [a, b, c]) await game.connect(pl).enter(id);
+      const start = p.earliestStart + 100; // his first movement
+      await at(start + 4, () => game.connect(late).enter(id)); // saw him run and jumped in
+      await at(start + 6, () => game.connect(late).exit(id)); // and out again before the watcher posted
+      await at(start + 15, () => game.connect(watcher).postStart(id, start));
+      await expect(game.connect(late).exit(id)).to.be.revertedWithCustomError(game, "AlreadyExited");
+      expect(await game.claimable(id, late.address)).to.equal(BUY);
+      await at(start + 60, () => game.connect(a).exit(id));
+      await at(start + 400, () => game.connect(watcher).postEnd(id, start + 100, 1));
+      await game.connect(keeper).finalize(id);
+      const pot = BUY * 3n - (BUY * 3n) / 100n; // the late entry isn't in the pot; bounty capped at 1% of 3,000
+      expect(await game.claimable(id, a.address)).to.be.closeTo(pot, 10n); // a is the only winner
+      expect(await game.claimable(id, late.address)).to.equal(BUY); // refunded, not a winner
+      const before = await sqk.balanceOf(late.address);
+      await game.connect(late).claim(id);
+      expect(await sqk.balanceOf(late.address)).to.equal(before + BUY);
+    });
+
+    it("stops a late entry from exiting once the start is posted", async () => {
+      const { game, watcher, players } = await loadFixture(deploy);
+      const { id, p } = await createGame(game);
+      for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
+      const start = p.earliestStart + 100;
+      await at(start + 4, () => game.connect(players[3]).enter(id));
+      await at(start + 15, () => game.connect(watcher).postStart(id, start));
+      await expect(game.connect(players[3]).exit(id)).to.be.revertedWithCustomError(game, "LateEntry");
+    });
+
+    it("lets players leave the lobby with a refund any time before the start", async () => {
+      const { game, players, sqk } = await loadFixture(deploy);
+      const { id, p } = await createGame(game);
+      await game.connect(players[0]).enter(id);
+      await time.increaseTo(p.earliestStart + 3600);
+      const before = await sqk.balanceOf(players[0].address);
+      await game.connect(players[0]).leaveLobby(id);
+      expect(await sqk.balanceOf(players[0].address)).to.equal(before + BUY);
+    });
+  });
+
+  describe("always-on games", () => {
+    async function withDefaults() {
+      const f = await deploy();
+      const now = await time.latest();
+      await f.game.setDefaults({
+        buyIn: BUY, earliestStart: 0, idleWindow: 180, grace: 12, curveStep: 120, jackpotBps: 2000,
+        jackpotGroupBps: 1000, bountyFlat: BOUNTY, minPlayers: 2, maxPlayers: 200 }, 300);
+      return { ...f, now };
+    }
+
+    it("lets the watcher open a game with the default rules and a 5-minute minimum lobby", async () => {
+      const { game, watcher, players } = await loadFixture(withDefaults);
+      await expect(game.connect(players[0]).openNextGame()).to.be.revertedWithCustomError(game, "NotWatcher");
+      await game.connect(watcher).openNextGame();
+      const g = await game.getGame(1);
+      expect(g.status).to.equal(Status.Lobby);
+      expect(g.p.buyIn).to.equal(BUY);
+      expect(g.p.earliestStart).to.equal(BigInt(await time.latest()) + 300n);
+    });
+
+    it("opens the next game only after the current one has finished", async () => {
+      const { game, watcher, players } = await loadFixture(withDefaults);
+      await game.connect(watcher).openNextGame();
+      await expect(game.connect(watcher).openNextGame()).to.be.revertedWithCustomError(game, "GameInProgress");
+      await game.connect(players[0]).enter(1);
+      const g = await game.getGame(1);
+      await at(Number(g.p.earliestStart) + 5, () => game.connect(watcher).postStart(1, g.p.earliestStart)); // 1 player: voided
+      expect((await game.getGame(1)).status).to.equal(Status.Voided);
+      await game.connect(watcher).openNextGame();
+      expect(await game.gameCount()).to.equal(2n);
     });
   });
 });

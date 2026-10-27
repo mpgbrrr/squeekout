@@ -32,10 +32,11 @@ export function isHealthy(reading, now, cfg = DEFAULTS) {
 
 /**
  * Starts tracking one game. `phase` is "waiting" until the start, "live" until the end, then "done".
+ * The game starts at the hamster's first movement at or after `earliestStart` (the lobby's minimum time).
  * lastMove/lastCounter describe the hamster's latest movement seen in healthy data.
  */
-export function newGameState(lobbyClose) {
-  return { phase: "waiting", lobbyClose, startTime: null, lastMove: null, lastCounter: null, epoch: null, outage: null };
+export function newGameState(earliestStart) {
+  return { phase: "waiting", earliestStart, startTime: null, lastMove: null, lastCounter: null, epoch: null, outage: null };
 }
 
 /**
@@ -95,7 +96,7 @@ export function step(prev, reading, now, cfg = DEFAULTS) {
   }
 
   if (s.phase === "waiting") {
-    if (reading.observedAt >= s.lobbyClose && s.lastMove != null && s.lastMove >= s.lobbyClose) {
+    if (reading.observedAt >= s.earliestStart && s.lastMove != null && s.lastMove >= s.earliestStart) {
       s.phase = "live";
       s.startTime = s.lastMove;
       return { state: s, decision: { type: "start", startTime: s.startTime } };
