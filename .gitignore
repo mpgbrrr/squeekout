@@ -6,4 +6,5 @@ coverage/
 coverage.json
 .env
 *.key
-deployments/*.local.json
+deployments/localhost.json
+deployments/hardhat.json

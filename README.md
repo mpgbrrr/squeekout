@@ -1,0 +1,87 @@
+# Squeekchain Chicken
+
+A testnet game of chicken on [Squeekchain](https://docs.squeekchain.com/), the blockchain powered by Squeektoshi the hamster running on his wheel.
+
+Everyone buys in with SQK and stays "on the wheel" while the hamster runs. Get off whenever you like: the longer you stay, the bigger your share. Once the wheel has been still for 3 minutes, the game ends at his last movement. Anyone still on, or who got off too late, is caught and gets nothing.
+
+**Sepolia testnet only.** Testnet SQK has no value.
+
+## Rules
+
+| Rule | Value |
+|---|---|
+| Game starts | At Squeektoshi's first movement after the lobby closes |
+| Game ends | When the wheel has been still for **3 minutes**, at his last movement |
+| Grace | Exits up to **12 s** (one Ethereum block) after his last movement still win |
+| Payout curve | Your weight grows **+25% every 2 minutes** you stay in, smoothly to the second |
+| Jackpot | **20%** of the pot is shared by the **last 10%** of winners (at least one) |
+| Everyone else who got off in time | Shares the other 80% by weight |
+| Everyone caught | The pot rolls into the next game |
+| House fee | None |
+| Payout bounty | A flat SQK amount to whoever finalizes the game, capped at **1%** of the pot |
+| Feed outage | If Squeekchain's live feed drops: the game can't end while it's down. When it returns, the game carries on if the hamster didn't run during the gap, or if the gap was too short to hide a 3-minute stop. Otherwise the game is **voided and everyone refunded**. An outage over **30 minutes** also voids it. |
+| Leaving early | Leaving the lobby, or getting off before the game starts, is a full refund |
+| Backstop | If a game can't finish within 7 days of its lobby closing, anyone can refund it |
+
+## How it works
+
+```
+Squeekchain live feed ──► watcher ──► SqueekChicken contract ◄── players (web app)
+ (api.squeekchain.com)    posts start / end / void     holds SQK, pays winners
+                          finalizes for the bounty
+                          serves the web app + log
+```
+
+- **`contracts/SqueekChicken.sol`**: holds the buy-ins and pays out. The watcher can only post when the game started and when the hamster last moved, or void a game; it can't move money or pick winners. Optionally, `finalize` checks the watcher's end claim against Squeekchain's settled rounds (`SqueekCore`) before paying.
+- **`shared/rules.js`**: the game rules for reading the feed. The watcher uses them to decide, and the web app uses the same file to animate the hamster, so what players see matches what the watcher decides.
+- **`watcher/watcher.mjs`**: reads the feed every second, posts decisions, finalizes ended games, and serves the web app plus a public log at `/log`.
+- **`web/`**: the web app, including the 8-bit hamster cam.
+
+## Develop
+
+```sh
+npm install
+npm run compile   # compiles and writes web/abi.json
+npm test          # contract tests + a replay of a real night of feed data through the rules
+```
+
+`test/fixtures/feed-2026-10-26-night.jsonl` is Squeekchain's live feed as recorded on 26–27 Oct 2026, including a real 49-minute feed freeze.
+
+### Local end-to-end run
+
+Runs the real watcher against a local chain and a fake feed where the hamster runs for 90 seconds and then stops.
+
+```sh
+npx hardhat node                                                     # terminal 1
+CLOSE_IN=40 npx hardhat run scripts/e2e/setup.js --network localhost  # prints the game address and lobby close time
+node scripts/e2e/feed.mjs <run-from-unix> <run-to-unix>              # terminal 2: fake hamster
+CHAIN=hardhat RPC_URL=http://127.0.0.1:8545 SQUEEK_API=http://127.0.0.1:8787 \
+  GAME_ADDRESS=<game> WATCHER_PRIVATE_KEY=<hardhat account #1 key> STATE_FILE=./state.json \
+  node watcher/watcher.mjs                                           # terminal 3, then open http://localhost:3000
+PLAYER=0 GAME=<game> npx hardhat run scripts/e2e/exit.js --network localhost  # a player gets off
+```
+
+## Deploy to Sepolia
+
+1. **Keys.** Make fresh testnet-only keys and keep the file outside the repo:
+   `node scripts/make-keys.mjs ~/squeek-chicken-keys.json`
+   Fund both addresses with Sepolia ETH from a faucet. The deployer needs about 0.05 ETH; the watcher needs about 0.05 ETH to start, more if it runs many games.
+2. **Deploy the contract.**
+   `DEPLOYER_PRIVATE_KEY=<deployer key> WATCHER_ADDRESS=<watcher address> npm run deploy:sepolia`
+   This writes `deployments/sepolia.json`; commit it. Buy-ins use SQK from Squeekchain's published deployment record (`0x6872…cc76`) unless `SQK_ADDRESS` is set.
+3. **Run the watcher** on an always-on host. The repo's `Dockerfile` builds it. On Railway:
+   - New project → Deploy from GitHub repo → this repo.
+   - Variables: `GAME_ADDRESS`, `WATCHER_PRIVATE_KEY`, and optionally `RPC_URL` (a dedicated Sepolia RPC is more reliable than the public default).
+   - Add a **volume** mounted at `/data`, so the watcher's game state survives restarts. Without it, a restart during a live game voids that game.
+   - Generate a public domain: that URL is the web app.
+4. **Open a game.**
+   `DEPLOYER_PRIVATE_KEY=<deployer key> LOBBY_CLOSE=2026-10-28T21:00:00Z BUY_IN=100 npm run game:sepolia`
+   Squeektoshi usually runs between about 21:00 and 06:00 UTC.
+
+### Settled-round check
+
+`setRoundCheck(core, enabled)` points `finalize` at a `SqueekCore` deployment. It is **off** for now: Squeekchain's published record still lists the old `SqueekCore` (`0x7466…119f`, abandoned on 26 Oct 2026), while the live feed now belongs to an unpublished one (`0x980b…3d44`, reported by the API). Turn it on once Squeekchain confirms the address.
+
+## Testnet admin powers
+
+The deployer (owner) can create games, change the watcher address and configure the settled-round check. The watcher can post starts and ends, and void games. Neither can take players' SQK: refunds and winnings are paid only by the contract's rules.
