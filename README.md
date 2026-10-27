@@ -94,6 +94,10 @@ node scripts/verify-squeekchain.mjs 0x980b4424c007caf7a1f3670b48c8eaef7ebc3d44 0
 
 It confirms SQK is the real token, that its only minter reads this SqueekCore, and that SqueekCore's settled work matches the live feed. The settled-round check relies on that last point: `finalize` waits until the round of the hamster's last movement has settled, then confirms the watcher's counter falls inside that round. On real data from 27 Oct it accepts the true 06:55 stop and catches a fake claim one round earlier. The previous deployment (`0x7466…119f`, SQK `0x6872…cc76`) was abandoned on 26 Oct 2026.
 
+## Key security
+
+On testnet the watcher's key is stored as a hosting environment variable. That is acceptable only because the key holds a little Sepolia ETH and can't move players' SQK: it can post a game's start and end or void a game, and the settled-round check rejects ends that contradict Squeekchain's record. Hosts can leak variables (Railway disclosed one such breach on 21 Oct 2026), so **before mainnet, move the watcher's signing into a cloud key vault** (Google Cloud KMS or AWS KMS) that the server reaches through its cloud identity, so there is no exportable key on the server. Keep the owner key off every server; it can replace a leaked watcher with `setWatcher`.
+
 ## Testnet admin powers
 
 The deployer (owner) can create games, change the watcher address and configure the settled-round check. The watcher can post starts and ends, and void games. Neither can take players' SQK: refunds and winnings are paid only by the contract's rules.
