@@ -28,9 +28,43 @@ const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit"
 
 // ---------------------------------------------------------------- hamster cam
 
+// How long Squeektoshi has been running in his current run, from the readings this page has seen.
+// A run that was already going when the page opened is marked partial ("at least this long").
+function createRunClock() {
+  let since = null, partial = false, prevMode = null;
+  return {
+    update(view, lastMove, now) {
+      if (view.mode === "running" && prevMode !== "running") {
+        since = lastMove ?? now;
+        partial = prevMode === null;
+      }
+      if (view.mode !== "running") since = null;
+      prevMode = view.mode;
+    },
+    text(now) {
+      return since == null ? "" : `${mmss(Math.max(0, now - since))}${partial ? "+" : ""}`;
+    },
+  };
+}
+
+function showTimer(view, runClock, now, counting) {
+  if (view.mode === "running") {
+    $("countdown").textContent = runClock.text(now);
+    $("timerLbl").textContent = "this run";
+  } else if (view.mode === "paused" && counting) {
+    $("countdown").textContent = mmss(view.remaining);
+    $("timerLbl").textContent = "";
+  } else {
+    $("countdown").textContent = "";
+    $("timerLbl").textContent = "";
+  }
+}
+
 const cam = createHamster($("cam"));
 let rules = newGameState(0);
 let reading = null;
+let liveView = { mode: "asleep" };
+const liveRun = createRunClock();
 
 async function pollFeed() {
   try {
@@ -43,6 +77,8 @@ async function pollFeed() {
   rules = step({ ...rules, phase: rules.phase === "done" ? "live" : rules.phase }, reading, now).state;
   if (demo) return;
   const view = display(rules, reading, now);
+  liveRun.update(view, rules.lastMove, now);
+  liveView = view;
   cam.update(view);
   const live = game && Status[Number(game.status)] === "Live";
   const label = {
@@ -53,7 +89,7 @@ async function pollFeed() {
   }[view.mode];
   $("mode").textContent = label;
   $("mode").className = `mode ${view.mode}`;
-  $("countdown").textContent = view.mode === "paused" ? mmss(view.remaining) : "";
+  showTimer(view, liveRun, now, true);
 }
 setInterval(pollFeed, 2000);
 pollFeed();
@@ -106,7 +142,7 @@ function render() {
   const earliest = Number(g.p.earliestStart);
   if (lobby && now < earliest) { $("fClockLbl").textContent = "Can start in"; $("fClock").textContent = mmss(earliest - now); }
   else if (lobby) { $("fClockLbl").textContent = "Starts"; $("fClock").textContent = "when he runs"; }
-  else if (status === "Live") { $("fClockLbl").textContent = "Started at"; $("fClock").textContent = clock(start); }
+  else if (status === "Live") { $("fClockLbl").textContent = "Game time"; $("fClock").textContent = mmss(Math.max(0, now - start)); }
   else if (Number(g.lastMove)) { $("fClockLbl").textContent = "Hamster stopped at"; $("fClock").textContent = clock(Number(g.lastMove)); }
   else { $("fClockLbl").textContent = "Started at"; $("fClock").textContent = start ? clock(start) : "—"; }
 
@@ -152,12 +188,13 @@ function render() {
 
 // ---------------------------------------------------------------- demo mode
 
-let demoSpeed = 5, demoTimer = null;
+let demoSpeed = 5, demoTimer = null, demoRun = null;
 const LIVE_HELP = `The cartoon follows Squeekchain's live wheel data. Watch the real hamster at <a href="https://squeekchain.com" target="_blank" rel="noopener">squeekchain.com</a>.`;
 const demoSqk = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} SQK`;
 
 function startDemo() {
   demo = createDemo();
+  demoRun = createRunClock();
   $("demoBanner").hidden = false;
   $("speed").hidden = false;
   $("demoToggle").textContent = "Back to the real game";
@@ -185,15 +222,16 @@ function stopDemo() {
 function renderDemo() {
   const s = demo.state, view = demo.view(), players = demo.players, you = players[0];
   const since = (t) => `+${mmss(Math.max(0, t))}`;
+  demoRun.update(view, s.rules.lastMove, s.t);
   cam.update(view);
   $("mode").textContent = {
-    running: `Running · ${Math.round(view.rpm || 0)} rpm`,
+    running: `Running${view.rpm ? ` · ${Math.round(view.rpm)} rpm` : ""}`,
     paused: s.phase === "live" ? "Paused · game ends in" : "Resting",
     asleep: s.phase === "ended" ? "Stopped · game over" : "Resting",
     "signal-lost": "Signal lost · clock paused",
   }[view.mode];
   $("mode").className = `mode ${view.mode}`;
-  $("countdown").textContent = view.mode === "paused" && s.phase === "live" ? mmss(view.remaining) : "";
+  showTimer(view, demoRun, s.t, s.phase === "live");
 
   $("gameTitle").textContent = "Demo game";
   $("gameStatus").textContent = { lobby: "Lobby open: entries close when he starts running", live: "Live: the wheel is turning", ended: "Game over" }[s.phase];
@@ -308,6 +346,10 @@ async function loadLog() {
 
 setInterval(loadGame, 6000);
 setInterval(loadLog, 10000);
-setInterval(() => game && render(), 1000);
+setInterval(() => {
+  if (game) render();
+  // Keep the run clock ticking between feed readings.
+  if (!demo && liveView.mode === "running") $("countdown").textContent = liveRun.text(Math.floor(Date.now() / 1000));
+}, 1000);
 loadGame();
 loadLog();
