@@ -81,19 +81,32 @@ function log(event, data = {}) {
 // ---------------------------------------------------------------- feed
 
 let latest = null;
+let failingSince = null, lastFailureLog = 0;
 async function pollFeed() {
   try {
     const res = await fetch(`${API}/v1/status`, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      // Keep what the API said, so a block (for example by its CDN) can be reported to Squeekchain.
+      const body = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
+      const h = (name) => res.headers.get(name) || undefined;
+      throw Object.assign(new Error(`HTTP ${res.status}`), {
+        detail: { server: h("server"), cfRay: h("cf-ray"), cfMitigated: h("cf-mitigated"), requestId: h("x-request-id"), body },
+      });
+    }
     latest = readingFromStatus(await res.json(), Math.floor(Date.now() / 1000));
   } catch (e) {
     // Keep the last reading; it ages out and the rules then treat the feed as down.
-    if (!pollFeed.failing) log("feed_error", { error: String(e) });
-    pollFeed.failing = true;
+    const now = Date.now();
+    if (failingSince == null) failingSince = now;
+    if (now - lastFailureLog >= 5 * 60_000) {
+      log("feed_error", { error: String(e), ...e.detail, failingForSec: Math.round((now - failingSince) / 1000) });
+      lastFailureLog = now;
+    }
     return;
   }
-  if (pollFeed.failing) log("feed_recovered");
-  pollFeed.failing = false;
+  if (failingSince != null) log("feed_recovered", { downForSec: Math.round((Date.now() - failingSince) / 1000) });
+  failingSince = null;
+  lastFailureLog = 0;
 }
 
 // ---------------------------------------------------------------- chain
