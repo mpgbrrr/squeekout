@@ -27,6 +27,23 @@ main { display: grid; gap: 18px; padding-block: 8px 48px; }
 @media (max-width: 780px) { .top { grid-template-columns: 1fr; } }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
 canvas { width: 100%; aspect-ratio: 4 / 3; image-rendering: pixelated; border-radius: 8px; display: block; background: #141a33; }
+.camwrap { position: relative; }
+.hud-count { position: absolute; top: 10px; left: 10px; display: grid; justify-items: start; gap: 2px; padding: 8px 12px;
+  background: rgba(13, 17, 38, 0.82); border: 1px solid var(--line); border-radius: 8px; }
+.hud-count b { font-family: var(--pixel); font-size: 1.15rem; line-height: 1.2; color: var(--wheel); font-variant-numeric: tabular-nums; }
+.hud-count span { font-size: 0.72rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
+.hud-feed { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; padding: 8px 12px; list-style: none; display: grid; gap: 2px;
+  background: linear-gradient(to top, rgba(13, 17, 38, 0.92), rgba(13, 17, 38, 0.72)); border-radius: 0 0 8px 8px;
+  font-family: var(--mono); font-size: 0.8rem; line-height: 1.45; }
+.hud-feed li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+.hud-feed li:first-child { color: var(--ink); }
+.hud-feed li:nth-child(3) { opacity: 0.6; }
+.hud-feed li.fresh { animation: hud-in 0.5s ease-out; }
+.hud-feed .when { color: var(--ink-3); margin-right: 8px; }
+.hud-feed .off { color: var(--good); } .hud-feed .bad { color: var(--bad); } .hud-feed .ham { color: var(--wheel); }
+@keyframes hud-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .hud-feed li.fresh { animation: none; } }
+@media (max-width: 480px) { .hud-feed li:nth-child(3) { display: none; } .hud-feed { font-size: 0.72rem; } .hud-count b { font-size: 0.9rem; } }
 .cam-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 12px; align-items: baseline; }
 .mode { font-family: var(--pixel); font-size: 0.72rem; line-height: 1.7; }
 .mode.running { color: var(--good); } .mode.paused { color: var(--warn); } .mode.asleep { color: var(--ink-2); } .mode.signal-lost { color: var(--bad); }
@@ -85,7 +102,11 @@ th { color: var(--ink-3); font-family: var(--body); font-weight: 700; font-size:
   <section class="top">
     <div class="panel">
       <h2>Squeektoshi cam</h2>
-      <canvas id="cam" aria-label="Animated hamster showing whether Squeektoshi is running"></canvas>
+      <div class="camwrap">
+        <canvas id="cam" aria-label="Animated hamster showing whether Squeektoshi is running"></canvas>
+        <div class="hud-count" id="hudCount" hidden><b id="hudOn">0</b><span id="hudLbl">still on</span></div>
+        <ol class="hud-feed" id="hudFeed" aria-live="polite" aria-label="Latest game events" hidden></ol>
+      </div>
       <div class="cam-status">
         <span class="mode asleep" id="mode">Loading feed…</span>
         <span class="timer"><span class="countdown" id="countdown"></span><span class="timer-lbl" id="timerLbl"></span></span>

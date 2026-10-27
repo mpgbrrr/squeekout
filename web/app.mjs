@@ -30,15 +30,17 @@ const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit"
 
 // How long Squeektoshi has been running in his current run, from the readings this page has seen.
 // A run that was already going when the page opened is marked partial ("at least this long").
+// A run lasts from when he starts after a rest until he really stops: breaks shorter than the idle
+// window (and feed drops) are part of the run. "+" means the run began before this page saw it.
 function createRunClock() {
   let since = null, partial = false, prevMode = null;
   return {
     update(view, lastMove, now) {
-      if (view.mode === "running" && prevMode !== "running") {
+      if (view.mode === "running" && since == null) {
         since = lastMove ?? now;
-        partial = prevMode === null;
+        partial = prevMode !== "asleep";
       }
-      if (view.mode !== "running") since = null;
+      if (view.mode === "asleep") since = null;
       prevMode = view.mode;
     },
     text(now) {
@@ -47,13 +49,62 @@ function createRunClock() {
   };
 }
 
+// ---------------------------------------------------------------- on-cam overlay
+
+// Hamster moments (breaks, runs, feed drops) seen by this page, for the activity feed.
+function createMoments() {
+  const list = [];
+  let prev = null;
+  return {
+    list,
+    update(mode, t) {
+      if (prev !== null && mode !== prev) {
+        const text = {
+          paused: ["Squeektoshi took a break", "ham"], running: [prev === "signal-lost" ? "Feed back" : "He's running again", "ham"],
+          asleep: ["Squeektoshi stopped", "ham"], "signal-lost": ["Feed lost: the clock is paused", "bad"],
+        }[mode];
+        if (text) list.push({ t, text: text[0], kind: text[1] });
+        if (list.length > 30) list.shift();
+      }
+      prev = mode;
+    },
+    reset() { list.length = 0; prev = null; },
+  };
+}
+const liveMoments = createMoments();
+let lastFeedKey = "";
+
+// The game-over line goes on top of the feed.
+function gameOver(events, stoppedAt, caught) {
+  const t = Math.max(0, ...events.map((e) => e.t ?? 0)) + 1;
+  return { t, when: "END", text: `Game over: he stopped at +${mmss(stoppedAt)}, ${caught} caught`, kind: "bad" };
+}
+
+// count: players still on (or in the lobby, or caught); events: [{ t, text, kind }]; fmt(t) labels a time.
+function renderHud(count, label, events, fmt) {
+  $("hudCount").hidden = count == null;
+  if (count != null) { $("hudOn").textContent = String(count); $("hudLbl").textContent = label; }
+  const latest = events.filter((e) => e.t != null).sort((a, b) => b.t - a.t).slice(0, 3);
+  const key = latest.map((e) => `${e.t}|${e.text}`).join("/");
+  $("hudFeed").hidden = latest.length === 0;
+  if (key === lastFeedKey) return;
+  const fresh = latest[0] && !lastFeedKey.startsWith(`${latest[0].t}|${latest[0].text}`);
+  lastFeedKey = key;
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  $("hudFeed").innerHTML = latest.map((e, i) =>
+    `<li class="${i === 0 && fresh ? "fresh" : ""}"><span class="when">${e.when ?? fmt(e.t)}</span><span class="${e.kind || ""}">${esc(e.text)}</span></li>`).join("");
+}
+
 function showTimer(view, runClock, now, counting) {
   if (view.mode === "running") {
     $("countdown").textContent = runClock.text(now);
     $("timerLbl").textContent = "this run";
   } else if (view.mode === "paused" && counting) {
     $("countdown").textContent = mmss(view.remaining);
-    $("timerLbl").textContent = "";
+    $("timerLbl").textContent = runClock.text(now) && `run ${runClock.text(now)}`;
+  } else if (view.mode !== "asleep" && runClock.text(now)) {
+    $("countdown").textContent = runClock.text(now);
+    $("timerLbl").textContent = "this run";
   } else {
     $("countdown").textContent = "";
     $("timerLbl").textContent = "";
@@ -90,6 +141,7 @@ async function pollFeed() {
   $("mode").textContent = label;
   $("mode").className = `mode ${view.mode}`;
   showTimer(view, liveRun, now, true);
+  liveMoments.update(view.mode, now);
 }
 setInterval(pollFeed, 2000);
 pollFeed();
@@ -155,6 +207,26 @@ function render() {
     return `<tr><td>${short(p.addr)}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="muted">No players yet.</td></tr>`;
 
+  // On-cam overlay: players still on, and the latest events.
+  const who = (p) => (me && p.addr.toLowerCase() === me.toLowerCase() ? "You" : short(p.addr));
+  const stillOn = g.players.filter((p) => !p.entry.left && !late(p.entry) && !leftEarly(p.entry) && !Number(p.entry.exitTime)).length;
+  const lastMove = Number(g.lastMove);
+  const caught = g.players.filter((p) => !p.entry.left && !late(p.entry) && !leftEarly(p.entry)
+    && (!Number(p.entry.exitTime) || Number(p.entry.exitTime) > lastMove + Number(g.p.grace))).length;
+  const hudCount = lobby ? g.players.filter((p) => !p.entry.left).length : status === "Live" ? stillOn : caught;
+  const hudLabel = lobby ? "in the lobby" : status === "Live" ? "still on" : status === "Voided" ? "refunded" : "caught";
+  const events = [...liveMoments.list];
+  for (const p of g.players) {
+    if (Number(p.entry.enteredAt)) events.push({ t: Number(p.entry.enteredAt), text: `${who(p)} joined` });
+    const x = Number(p.entry.exitTime);
+    const tooLate = lastMove && x > lastMove + Number(g.p.grace);
+    if (x && start && x >= start) events.push({ t: x, text: `${who(p)} got off${tooLate ? " too late" : ""}`, kind: tooLate ? "bad" : "off" });
+  }
+  if (start) events.push({ t: start, text: "Game on! Entries closed", kind: "ham" });
+  if (lastMove) events.push(gameOver(events, lastMove - start, caught));
+  if (status === "Voided") events.push({ t: now, text: "Game voided: everyone refunded", kind: "bad" });
+  renderHud(hudCount, hudLabel, events, (t) => (start && t >= start ? `+${mmss(t - start)}` : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
+
   const mine = me && g.players.find((p) => p.addr.toLowerCase() === me.toLowerCase());
   const inLobby = mine && lobby && !mine.entry.left && !Number(mine.entry.exitTime);
   const btn = $("mainAction");
@@ -189,12 +261,15 @@ function render() {
 // ---------------------------------------------------------------- demo mode
 
 let demoSpeed = 5, demoTimer = null, demoRun = null;
+const demoMoments = createMoments();
 const LIVE_HELP = `The cartoon follows Squeekchain's live wheel data. Watch the real hamster at <a href="https://squeekchain.com" target="_blank" rel="noopener">squeekchain.com</a>.`;
 const demoSqk = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} SQK`;
 
 function startDemo() {
   demo = createDemo();
   demoRun = createRunClock();
+  demoMoments.reset();
+  lastFeedKey = "";
   $("demoBanner").hidden = false;
   $("speed").hidden = false;
   $("demoToggle").textContent = "Back to the real game";
@@ -211,6 +286,7 @@ function stopDemo() {
   clearInterval(demoTimer);
   demoTimer = null;
   demo = null;
+  lastFeedKey = "";
   $("demoBanner").hidden = true;
   $("speed").hidden = true;
   $("demoToggle").textContent = "Play a demo game";
@@ -232,6 +308,19 @@ function renderDemo() {
   }[view.mode];
   $("mode").className = `mode ${view.mode}`;
   showTimer(view, demoRun, s.t, s.phase === "live");
+  if (s.phase !== "lobby") demoMoments.update(view.mode, s.t);
+  const stillOn = players.filter((p) => p.exit == null).length;
+  const events = [...demoMoments.list];
+  if (s.start != null) events.push({ t: s.start, text: "Game on! Entries closed", kind: "ham" });
+  for (const p of players) {
+    if (p.exit == null) continue;
+    const tooLate = s.result && !s.result.payouts.has(p.id);
+    events.push({ t: s.start + p.exit, text: `${p.name} got off${tooLate ? " too late" : ""}`, kind: tooLate ? "bad" : "off" });
+  }
+  const caught = s.result ? players.filter((p) => !s.result.payouts.has(p.id)).length : stillOn;
+  if (s.phase === "ended") events.push(gameOver(events, s.lastMove - s.start, caught));
+  renderHud(s.phase === "lobby" ? players.length : s.phase === "live" ? stillOn : caught, s.phase === "lobby" ? "in the lobby" : s.phase === "live" ? "still on" : "caught",
+    events, (t) => (s.start != null && t >= s.start ? `+${mmss(t - s.start)}` : "lobby"));
 
   $("gameTitle").textContent = "Demo game";
   $("gameStatus").textContent = { lobby: "Lobby open: entries close when he starts running", live: "Live: the wheel is turning", ended: "Game over" }[s.phase];
@@ -349,7 +438,7 @@ setInterval(loadLog, 10000);
 setInterval(() => {
   if (game) render();
   // Keep the run clock ticking between feed readings.
-  if (!demo && liveView.mode === "running") $("countdown").textContent = liveRun.text(Math.floor(Date.now() / 1000));
+  if (!demo) showTimer(liveView, liveRun, Math.floor(Date.now() / 1000), true);
 }, 1000);
 loadGame();
 loadLog();
