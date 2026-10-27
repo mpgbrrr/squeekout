@@ -57,11 +57,11 @@ function createMoments() {
   let prev = null;
   return {
     list,
-    update(mode, t) {
+    update(mode, t, live = false) {
       if (prev !== null && mode !== prev) {
         const text = {
           paused: ["Squeektoshi took a break", "ham"], running: [prev === "signal-lost" ? "Feed back" : "He's running again", "ham"],
-          asleep: ["Squeektoshi stopped", "ham"], "signal-lost": ["Feed lost: the clock is paused", "bad"],
+          asleep: ["Squeektoshi stopped", "ham"], "signal-lost": [live ? "Feed lost: game clock paused" : "Feed lost: no word from the wheel", "bad"],
         }[mode];
         if (text) list.push({ t, text: text[0], kind: text[1] });
         if (list.length > 30) list.shift();
@@ -141,12 +141,12 @@ async function pollFeed() {
     running: `Running${view.rpm ? ` · ${Math.round(view.rpm)} rpm` : ""}`,
     paused: live ? "Paused · game ends in" : "Paused",
     asleep: live ? "Stopped · game over" : "Resting",
-    "signal-lost": "Signal lost · clock paused",
+    "signal-lost": live ? "Signal lost · game clock paused" : "Signal lost · no word from the wheel",
   }[view.mode];
   $("mode").textContent = label;
   $("mode").className = `mode ${view.mode}`;
   showTimer(view, liveRun, now, true);
-  liveMoments.update(view.mode, now);
+  liveMoments.update(view.mode, now, live);
 }
 setInterval(pollFeed, 2000);
 pollFeed();
