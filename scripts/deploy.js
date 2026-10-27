@@ -1,25 +1,35 @@
 // Deploys SqueekChicken to Sepolia.
 //   DEPLOYER_PRIVATE_KEY  pays for the deploy and becomes the owner (testnet admin)
 //   WATCHER_ADDRESS       address of the watcher service's key
-//   SQK_ADDRESS           optional; defaults to SQK from Squeekchain's published Sepolia deployment record
+//   SQK_ADDRESS           optional; defaults to the SQK of Squeekchain's 26 Oct 2026 Sepolia deployment
+//   SQUEEK_CORE           optional; the SqueekCore that the settled-round check reads (set "off" to skip)
 // Usage: npx hardhat run scripts/deploy.js --network sepolia
 const fs = require("node:fs");
 const path = require("node:path");
 const { ethers, network } = require("hardhat");
 
-// From https://docs.squeekchain.com/assets/deployments/sepolia.json (SqueekToken is immutable).
-const PUBLISHED_SQK = "0x6872bfa5ccc3e9e440c6c16e5ffdabb8dba4cc76";
+// Squeekchain's Sepolia deployment of 26 Oct 2026, confirmed by the Squeekchain team and checked on-chain with
+// scripts/verify-squeekchain.mjs (SQK's minter reads this SqueekCore; settled work matches the live feed).
+// Not yet in the published record at https://docs.squeekchain.com/assets/deployments/sepolia.json.
+const DEFAULT_SQK = "0x5501e1fa81be1c3f49225fa7668da0245d07db60";
+const DEFAULT_CORE = "0x980b4424c007caf7a1f3670b48c8eaef7ebc3d44";
 
 async function main() {
-  const sqk = process.env.SQK_ADDRESS || PUBLISHED_SQK;
+  const sqk = process.env.SQK_ADDRESS || DEFAULT_SQK;
+  const core = process.env.SQUEEK_CORE || DEFAULT_CORE;
   const watcher = process.env.WATCHER_ADDRESS;
   if (!ethers.isAddress(watcher)) throw new Error("Set WATCHER_ADDRESS to the watcher's address");
   const [deployer] = await ethers.getSigners();
   console.log(`Deploying from ${deployer.address} on ${network.name}`);
   const game = await (await ethers.getContractFactory("SqueekChicken")).deploy(sqk, watcher);
   const receipt = await game.deploymentTransaction().wait();
+  if (core !== "off") {
+    await (await game.setRoundCheck(core, true)).wait();
+    console.log(`Settled-round check on, reading SqueekCore ${core}`);
+  }
   const record = {
     network: network.name, chainId: Number(network.config.chainId || 31337), address: game.target, sqk, watcher,
+    roundCheckCore: core === "off" ? null : core,
     owner: deployer.address, deployTx: receipt.hash, block: receipt.blockNumber, deployedAt: new Date().toISOString(),
   };
   const out = path.join(__dirname, "..", "deployments", `${network.name}.json`);

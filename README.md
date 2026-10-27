@@ -69,7 +69,7 @@ GAME=<game> npx hardhat run scripts/e2e/report.js --network localhost         # 
    Fund both addresses with Sepolia ETH from a faucet. The deployer needs about 0.05 ETH; the watcher needs about 0.05 ETH to start, more if it runs many games.
 2. **Deploy the contract.**
    `DEPLOYER_PRIVATE_KEY=<deployer key> WATCHER_ADDRESS=<watcher address> npm run deploy:sepolia`
-   This writes `deployments/sepolia.json`; commit it. Buy-ins use SQK from Squeekchain's published deployment record (`0x6872…cc76`) unless `SQK_ADDRESS` is set.
+   This writes `deployments/sepolia.json`; commit it. It uses Squeekchain's current Sepolia contracts (below) and switches the settled-round check on. Override with `SQK_ADDRESS` and `SQUEEK_CORE` (`SQUEEK_CORE=off` skips the check).
 3. **Run the watcher** on an always-on host. The repo's `Dockerfile` builds it. On Railway:
    - New project → Deploy from GitHub repo → this repo.
    - Variables: `GAME_ADDRESS`, `WATCHER_PRIVATE_KEY`, and optionally `RPC_URL` (a dedicated Sepolia RPC is more reliable than the public default).
@@ -79,9 +79,20 @@ GAME=<game> npx hardhat run scripts/e2e/report.js --network localhost         # 
    `DEPLOYER_PRIVATE_KEY=<deployer key> LOBBY_CLOSE=2026-10-28T21:00:00Z BUY_IN=100 npm run game:sepolia`
    Squeektoshi usually runs between about 21:00 and 06:00 UTC.
 
-### Settled-round check
+### Squeekchain contracts
 
-`setRoundCheck(core, enabled)` points `finalize` at a `SqueekCore` deployment. It is **off** for now: Squeekchain's published record still lists the old `SqueekCore` (`0x7466…119f`, abandoned on 26 Oct 2026), while the live feed now belongs to an unpublished one (`0x980b…3d44`, reported by the API). Turn it on once Squeekchain confirms the address.
+| Contract | Sepolia address |
+|---|---|
+| SqueekCore | `0x980b4424c007caf7a1f3670b48c8eaef7ebc3d44` |
+| SQK | `0x5501e1fa81be1c3f49225fa7668da0245d07db60` |
+
+This is Squeekchain's Sepolia deployment of 26 Oct 2026, confirmed by the Squeekchain team. It isn't in their published deployment record yet, so check it before deploying:
+
+```sh
+node scripts/verify-squeekchain.mjs 0x980b4424c007caf7a1f3670b48c8eaef7ebc3d44 0x5501e1fa81be1c3f49225fa7668da0245d07db60
+```
+
+It confirms SQK is the real token, that its only minter reads this SqueekCore, and that SqueekCore's settled work matches the live feed. The settled-round check relies on that last point: `finalize` waits until the round of the hamster's last movement has settled, then confirms the watcher's counter falls inside that round. On real data from 27 Oct it accepts the true 06:55 stop and catches a fake claim one round earlier. The previous deployment (`0x7466…119f`, SQK `0x6872…cc76`) was abandoned on 26 Oct 2026.
 
 ## Testnet admin powers
 
