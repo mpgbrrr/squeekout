@@ -249,7 +249,8 @@ createServer((req, res) => {
   }
   try {
     const body = readFileSync(file);
-    res.writeHead(200, { "content-type": TYPES[extname(file)] || "application/octet-stream" });
+    // no-cache: browsers may keep a copy but must check for a newer one, so a deploy shows up on reload.
+    res.writeHead(200, { "content-type": TYPES[extname(file)] || "application/octet-stream", "cache-control": "no-cache" });
     res.end(body);
   } catch {
     res.writeHead(404);
