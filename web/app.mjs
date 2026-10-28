@@ -55,6 +55,12 @@ function createRunClock() {
       if (view.mode === "asleep") since = null;
       prevMode = view.mode;
     },
+    /** Starts from the watcher's record of this run, for a page opened mid-run. */
+    seed(runSince, runPartial) {
+      since = runSince;
+      partial = runPartial;
+      prevMode = "running";
+    },
     text(now) {
       return since == null ? "" : `${mmss(Math.max(0, now - since))}${partial ? "+" : ""}`;
     },
@@ -162,6 +168,17 @@ async function pollFeed() {
   $("mode").className = `mode ${view.mode}`;
   showTimer(view, liveRun, now, true);
   liveMoments.update(view.mode, now, live);
+}
+// Opened mid-game? Start from the watcher's record of his last movement and this run, so the break
+// countdown and the run clock are right straight away instead of starting from when the page opened.
+try {
+  const h = await (await fetch("/hamster", { cache: "no-store" })).json();
+  if (h.lastMove != null && Date.now() / 1000 - h.lastMove < (h.idleWindow ?? DEFAULTS.idleWindow)) {
+    rules = { ...rules, epoch: h.epoch, lastCounter: h.lastCounter, lastMove: h.lastMove };
+    if (h.runSince != null) liveRun.seed(h.runSince, h.runPartial);
+  }
+} catch {
+  // No watcher record (for example a static preview): the clocks start from what this page sees.
 }
 setInterval(pollFeed, 2000);
 pollFeed();

@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { hardhat, sepolia } from "viem/chains";
-import { newGameState, readingFromStatus, step } from "../shared/rules.js";
+import { DEFAULTS, newGameState, readingFromStatus, step, trackRun } from "../shared/rules.js";
 import { createBots, isTestToken } from "./bots.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -224,6 +224,7 @@ let busy = false;
 async function tick() {
   await pollFeed();
   const now = Math.floor(Date.now() / 1000);
+  saved.hamster = trackRun(saved.hamster, latest, now);
   for (const [id, game] of Object.entries(saved.games)) {
     if (game.rules.phase === "done") continue;
     const { state, decision } = step(game.rules, latest, now);
@@ -267,6 +268,13 @@ createServer((req, res) => {
   if (url.pathname === "/log") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify(recent.slice(-200)));
+  }
+  if (url.pathname === "/hamster") {
+    // When he last moved and when this run began, so a page opened mid-game shows the right clocks.
+    const h = saved.hamster;
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    return res.end(JSON.stringify(h ? { epoch: h.epoch, lastCounter: h.lastCounter, lastMove: h.lastMove, runSince: h.runSince,
+      runPartial: h.runPartial, idleWindow: DEFAULTS.idleWindow } : {}));
   }
   if (url.pathname === "/config.json") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });

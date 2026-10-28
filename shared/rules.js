@@ -115,6 +115,33 @@ function finish(s, decision) {
   return { state: s, decision };
 }
 
+/**
+ * The hamster's latest movement and when his current run began, kept by the watcher around the clock so a
+ * page opened mid-run or mid-break can show the right clocks straight away. A run lasts until he has been
+ * still for a full idle window. runPartial: the run began before the watcher could see it (it had just
+ * started, or readings were missing), so runSince is only "at least since".
+ */
+export function trackRun(prev, reading, now, cfg = DEFAULTS) {
+  if (!isHealthy(reading, now, cfg)) return prev ?? null;
+  if (!prev || prev.epoch !== reading.epoch) {
+    return { epoch: reading.epoch, lastCounter: reading.counter, lastMove: null, runSince: null, runPartial: true,
+      stillSince: reading.observedAt, seenAt: reading.observedAt };
+  }
+  const t = { ...prev };
+  const gap = reading.observedAt - t.seenAt > cfg.maxReadingAge; // readings were missed in between
+  t.seenAt = reading.observedAt;
+  if (reading.counter > t.lastCounter) {
+    if (t.lastMove == null || reading.observedAt - t.lastMove >= cfg.idleWindow) {
+      t.runSince = reading.observedAt;
+      // The start is known only if he was seen still for a full idle window just before, with no gap.
+      t.runPartial = gap || (t.lastMove == null && reading.observedAt - t.stillSince < cfg.idleWindow);
+    }
+    t.lastMove = reading.observedAt;
+    t.lastCounter = reading.counter;
+  }
+  return t;
+}
+
 /** What the hamster animation should show, from the same state the rules use. */
 export function display(state, reading, now, cfg = DEFAULTS) {
   if (!isHealthy(reading, now, cfg)) return { mode: "signal-lost" };
