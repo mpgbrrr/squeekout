@@ -138,7 +138,11 @@ async function pollFeed() {
 const chainGames = new Map(); // id -> { status, p, startTime }, refreshed with every chain round
 async function refreshGames() {
   const count = Number(await pub.readContract({ address: GAME, abi, functionName: "gameCount" }));
-  for (let id = 1; id <= count; id++) {
+  // Finished games never change, so only read the games still being tracked and the latest three
+  // (the test players look at those), not every game ever played.
+  const from = Math.max(1, Math.min(count - 2, ...Object.keys(saved.games).map(Number)));
+  for (const id of chainGames.keys()) if (id < from) chainGames.delete(id);
+  for (let id = from; id <= count; id++) {
     const g = await pub.readContract({ address: GAME, abi, functionName: "getGame", args: [BigInt(id)] });
     const status = Status[Number(g.status)];
     chainGames.set(id, { status, p: g.p, startTime: Number(g.startTime) });
