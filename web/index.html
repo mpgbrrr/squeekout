@@ -82,6 +82,17 @@ th { color: var(--ink-3); font-family: var(--body); font-weight: 700; font-size:
 .speed { display: inline-flex; gap: 4px; }
 .speed button { padding: 6px 10px; font-family: var(--mono); font-weight: 600; }
 .speed button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.beta-strip { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; justify-content: center; padding: 8px 16px;
+  background: #3a2a08; color: #ffe2a3; border-bottom: 1px solid var(--warn); font-size: 0.88rem; text-align: center; }
+.beta-strip b { font-family: var(--pixel); font-size: 0.62rem; color: #1a1405; background: var(--warn); padding: 4px 6px; border-radius: 4px; }
+.beta-strip button { background: none; border: none; padding: 0; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; }
+dialog.beta { max-width: 460px; width: calc(100% - 32px); background: var(--panel, #141a33); color: var(--ink); border: 1px solid var(--warn);
+  border-radius: 12px; padding: 22px; }
+dialog.beta::backdrop { background: rgba(5, 7, 18, 0.75); }
+dialog.beta h2 { margin: 0 0 10px; font-family: var(--pixel); font-size: 0.9rem; line-height: 1.6; color: var(--warn); }
+dialog.beta ul { margin: 0 0 16px; padding-left: 20px; display: grid; gap: 6px; }
+dialog.beta form { display: flex; flex-wrap: wrap; gap: 10px; }
+dialog.beta button { flex: 1 1 auto; }
 .banner { border: 1px dashed var(--wheel); color: var(--wheel); border-radius: 10px; padding: 10px 14px; font-size: 0.92rem; }
 .howto { display: grid; gap: 14px; }
 .howto ol { margin: 0; padding-left: 1.4em; display: grid; gap: 10px; max-width: 70ch; }
@@ -91,6 +102,20 @@ th { color: var(--ink-3); font-family: var(--body); font-weight: 700; font-size:
 </style>
 </head>
 <body>
+<div class="beta-strip" role="note"><b>TESTING</b> This game is still being tested on the Sepolia testnet. Use a throwaway wallet. <button id="betaMore" type="button">Read more</button></div>
+<dialog class="beta" id="betaDialog" aria-labelledby="betaTitle">
+  <h2 id="betaTitle">Still in testing</h2>
+  <ul>
+    <li>This game is an early test. The contracts are <b>unaudited</b> and may have bugs.</li>
+    <li>It runs on the <b>Sepolia testnet</b>. Test tokens and Sepolia ETH have no value.</li>
+    <li><b>Use a throwaway wallet</b> made just for testing, with nothing of value in it. Never connect a wallet that holds real funds or NFTs.</li>
+    <li>Games may be reset, redeployed or voided while we test.</li>
+  </ul>
+  <form method="dialog">
+    <button class="primary" value="ok">Got it: I'll use a throwaway wallet</button>
+    <button class="secondary" value="cancel">Not now</button>
+  </form>
+</dialog>
 <header>
   <h1>Squeekchain Chicken</h1>
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">

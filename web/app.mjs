@@ -388,7 +388,31 @@ for (const b of $("speed").querySelectorAll("button")) {
 
 // ---------------------------------------------------------------- wallet actions
 
+// ---------------------------------------------------------------- testing notice
+
+// Shows the "still in testing" notice; resolves true if the visitor agrees to use a throwaway wallet.
+function showBetaNotice() {
+  const d = $("betaDialog");
+  return new Promise((resolve) => {
+    d.addEventListener("close", () => resolve(d.returnValue === "ok"), { once: true });
+    if (!d.open) { d.returnValue = ""; d.showModal(); }
+  });
+}
+const store = (kind, key, value) => { try { return value === undefined ? window[kind].getItem(key) : window[kind].setItem(key, value); } catch { return null; } };
+$("betaMore").onclick = () => showBetaNotice();
+if (!store("localStorage", "betaNoticeSeen")) {
+  showBetaNotice().then((ok) => {
+    store("localStorage", "betaNoticeSeen", "1");
+    if (ok) store("sessionStorage", "betaAgreed", "1");
+  });
+}
+
 async function connect() {
+  // Ask once per visit before any wallet connects.
+  if (!store("sessionStorage", "betaAgreed")) {
+    if (!(await showBetaNotice())) return;
+    store("sessionStorage", "betaAgreed", "1");
+  }
   if (!window.ethereum) { msg("Install a browser wallet such as MetaMask to play.", true); return; }
   wallet = createWalletClient({ chain, transport: custom(window.ethereum) });
   [me] = await wallet.requestAddresses();
