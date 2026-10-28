@@ -39,12 +39,28 @@ const pub = createPublicClient({ chain, transport: http(RPC) });
 const wallet = createWalletClient({ account, chain, transport: http(RPC) });
 const Status = ["None", "Lobby", "Live", "Ended", "Settled", "Voided", "RolledOver"];
 
+// ---------------------------------------------------------------- public log
+
+const recent = [];
+function log(event, data = {}) {
+  const entry = { at: new Date().toISOString(), event, ...data };
+  console.log(JSON.stringify(entry));
+  if (event !== "tick") {
+    recent.push(entry);
+    if (recent.length > 500) recent.shift();
+  }
+}
+
 // ---------------------------------------------------------------- state that survives restarts
 
-let saved = { savedAt: 0, games: {} }; // id -> { rules, queue of decisions not yet posted, chain status }
+let saved = { game: GAME, savedAt: 0, games: {} }; // games: id -> { rules, queue of decisions not yet posted, chain status }
 if (existsSync(STATE_FILE)) {
   try {
-    saved = JSON.parse(readFileSync(STATE_FILE, "utf8"));
+    const loaded = JSON.parse(readFileSync(STATE_FILE, "utf8"));
+    // Game ids restart at 1 on each contract, so state saved for another contract (or before the address
+    // was recorded) doesn't apply here.
+    if (loaded.game?.toLowerCase() === GAME.toLowerCase()) saved = loaded;
+    else log("state_reset", { reason: "saved state belongs to another game contract", savedFor: loaded.game ?? null });
   } catch (e) {
     log("state_unreadable", { error: String(e) });
   }
@@ -63,18 +79,6 @@ function persist() {
     writeFileSync(STATE_FILE, JSON.stringify(saved));
   } catch (e) {
     log("state_write_failed", { error: String(e) });
-  }
-}
-
-// ---------------------------------------------------------------- public log
-
-const recent = [];
-function log(event, data = {}) {
-  const entry = { at: new Date().toISOString(), event, ...data };
-  console.log(JSON.stringify(entry));
-  if (event !== "tick") {
-    recent.push(entry);
-    if (recent.length > 500) recent.shift();
   }
 }
 
