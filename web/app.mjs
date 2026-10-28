@@ -27,6 +27,13 @@ const SQK = await pub.readContract({ address: GAME, abi, functionName: "sqk" });
 const SYMBOL = await pub.readContract({ address: SQK, abi: erc20, functionName: "symbol" }).catch(() => "SQK");
 const TEST_TOKEN = await pub.readContract({ address: SQK, abi: erc20, functionName: "MAX_MINT" }).then(() => true, () => false);
 const FAUCET = 1000n * 10n ** 18n;
+// NFT jackpot bonus: the treasury whose Squeeks' rewards boost jackpots (none on older game contracts).
+const ZERO = "0x0000000000000000000000000000000000000000";
+const TREASURY = abi.some((x) => x.name === "treasury")
+  ? await pub.readContract({ address: GAME, abi, functionName: "treasury" }).catch(() => ZERO) : ZERO;
+const BONUS_DELAY = TREASURY !== ZERO ? Number(await pub.readContract({ address: GAME, abi, functionName: "bonusDelay" })) : 0;
+const treasuryAbi = parseAbi(["function pendingToGame() view returns (uint256)"]);
+$("howtoBonus").hidden = TREASURY === ZERO;
 const Status = ["None", "Lobby", "Live", "Ended", "Settled", "Voided", "RolledOver"];
 
 let wallet = null, me = null, game = null;
@@ -37,6 +44,7 @@ const names = createNames(cfg.bots || [], () => { const n = me && names.ensName(
 const playerName = names.playerName;
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const hhmm = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 // ---------------------------------------------------------------- hamster cam
 
@@ -210,6 +218,23 @@ async function loadGame() {
   // The entries getter returns a plain list; name its fields.
   const entry = ([entered, left, claimed, enteredAt, exitTime]) => ({ entered, left, claimed, enteredAt, exitTime });
   game = { id, ...g, players: players.map((p, i) => ({ addr: p, entry: entry(results[2 * i]), claimable: results[2 * i + 1] })) };
+  if (TREASURY !== ZERO) {
+    const [b, pending] = await Promise.all([
+      pub.readContract({ address: GAME, abi, functionName: "bonuses", args: [id] }),
+      pub.readContract({ address: TREASURY, abi: treasuryAbi, functionName: "pendingToGame" }).catch(() => 0n),
+    ]);
+    game.bonus = { settled: b[0], jackpotCount: Number(b[1]), each: b[3], pending };
+    // Until the previous game's bonus is paid, rewards so far belong to it, not to this game.
+    if (id > 1n) {
+      const [prev, last] = await Promise.all([
+        pub.readContract({ address: GAME, abi, functionName: "getGame", args: [id - 1n] }),
+        pub.readContract({ address: GAME, abi, functionName: "lastBonusGame" }),
+      ]);
+      if (["Settled", "RolledOver"].includes(Status[Number(prev.status)]) && last < id - 1n) {
+        game.bonus.waitingFor = { id: id - 1n, at: Number(prev.lastMove) + BONUS_DELAY };
+      }
+    }
+  }
   // The game ended while this page was open: celebrate, if the feed didn't already trigger it.
   const status = Status[Number(g.status)], before = seenStatus.get(id);
   seenStatus.set(id, status);
@@ -246,6 +271,7 @@ function render() {
   else { $("fClockLbl").textContent = "Started at"; $("fClock").textContent = start ? clock(start) : "—"; }
 
   const settled = status === "Settled";
+  renderBonus(g, status);
   $("players").innerHTML = g.players.length ? g.players.map((p) => {
     const e = p.entry;
     const off = e.left ? "left the lobby" : late(e) ? "joined after the start (refunded)" : leftEarly(e) ? "left before the start (refunded)"
@@ -304,6 +330,25 @@ function render() {
     $("youStatus").textContent = mine ? (settled && !mine.claimable && !mine.entry.claimed ? "You were still on when he stopped." : "Waiting for the game to finish.")
       : "A new game opens as soon as this one finishes.";
   }
+}
+
+// ---------------------------------------------------------------- NFT jackpot bonus
+
+const bonusAt = (g) => hhmm(Number(g.lastMove) + BONUS_DELAY);
+function renderBonus(g, status) {
+  const line = $("bonusLine"), b = g.bonus;
+  if (!b) { line.hidden = true; return; }
+  const amt = (v) => `<b>${sqk(v)}</b>`;
+  let html = "";
+  if ((status === "Lobby" || status === "Live") && b.waitingFor) {
+    html = `🐹 NFT jackpot bonus: game #${b.waitingFor.id}'s bonus (about ${amt(b.pending)}) is paid at ${hhmm(b.waitingFor.at)}; this game's starts counting after that`;
+  } else if (status === "Lobby" || status === "Live") html = `🐹 NFT jackpot bonus so far: ${amt(b.pending)}, growing while he runs`;
+  else if (["Ended", "Settled", "RolledOver"].includes(status) && !b.settled) {
+    html = status === "RolledOver" ? `🐹 NFT jackpot bonus: about ${amt(b.pending)} so far, rolling into the next game at ${bonusAt(g)}`
+      : `🐹 NFT jackpot bonus: about ${amt(b.pending)} so far, paid to the jackpot winners at ${bonusAt(g)}`;
+  } else if (b.settled && b.each > 0n) html = `🐹 NFT jackpot bonus: +${amt(b.each)} to each jackpot winner`;
+  line.hidden = !html;
+  line.innerHTML = html;
 }
 
 // ---------------------------------------------------------------- end of a game
@@ -397,7 +442,8 @@ function celebrateLive(lastMove) {
     you: !mine ? null : myPay ? { kind: "won", text: `You won ${amount(myPay.total)}!` } : { kind: "caught", text: "You were still on the wheel: caught!" },
     winners,
     caught: caughtLine(inGame.filter((p) => !r.payouts.has(p.addr.toLowerCase())).map(name), r.rolledOver, amount(r.pot)),
-    note: r.rolledOver ? "" : "Payouts are estimates until the game is finalized on chain, usually 5–20 minutes after he stops. Winners can then claim here or on the game card.",
+    note: (r.rolledOver ? "" : "Payouts are estimates until the game is finalized on chain, usually 5–20 minutes after he stops. Winners can then claim here or on the game card.")
+      + (g.bonus ? ` ${r.rolledOver ? "The" : "Plus the"} NFT jackpot bonus${g.bonus.pending ? ` (about ${sqk(g.bonus.pending)} so far)` : ""} ${r.rolledOver ? "rolls into the next game" : "goes to the jackpot winners"} at ${hhmm(lastMove + BONUS_DELAY)}, once the hamster's rewards have arrived.` : ""),
   });
   updateFinaleClaim().catch(() => {});
 }
@@ -434,6 +480,7 @@ function startDemo() {
   demoCelebrated = false;
   finale.close();
   $("unclaimed").hidden = true;
+  $("bonusLine").hidden = true;
   demoMoments.reset();
   lastFeedKey = "";
   $("demoBanner").hidden = false;

@@ -8,12 +8,20 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ISqueekCore} from "./ISqueekCore.sol";
 
+/// @notice ChickenTreasury: harvests the NFTs' rewards and sends the game's half to the caller (this game).
+interface IChickenTreasury {
+    function harvest() external returns (uint256 toGame);
+}
+
 /// @title SqueekChicken
 /// @notice A game of chicken on Squeektoshi's wheel. Players buy in with SQK while the lobby is open; the
 /// lobby closes when the hamster starts running. Once he runs, players exit whenever they like. The game
 /// ends at his last movement once the wheel has been still for `idleWindow` seconds. Anyone still in, or
 /// who exited too late, is caught. Winners split the pot by how long they stayed in, and the last 10% of
 /// winners share a jackpot. When a game finishes, the watcher opens the next one.
+/// When a treasury is set, half of what the game's Squeek NFTs earn from the hamster's run is added to that
+/// game's jackpot. Those rewards take time to arrive, so the bonus is settled `bonusDelay` seconds after his
+/// last movement and jackpot winners claim it on top of their payout.
 /// @dev Testnet build. A watcher service reads Squeekchain's live feed and posts start, end and void
 /// decisions; it cannot move funds or choose winners. When enabled, `finalize` checks the watcher's end
 /// claim against SqueekCore's settled rounds before any payout.
@@ -58,6 +66,14 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         uint64 jackpotFromTime; // winners who exited at or after this time share the jackpot
     }
 
+    /// @dev The NFT jackpot bonus of one game, settled `bonusDelay` after the hamster's last movement.
+    struct Bonus {
+        bool settled;
+        uint32 jackpotCount; // winners sharing the jackpot, fixed at finalize
+        uint64 settledAt;
+        uint128 each; // paid to each jackpot winner on top of their payout
+    }
+
     struct Entry {
         bool entered;
         bool left; // left during the lobby and was refunded
@@ -86,6 +102,12 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
     uint256 public rolloverPool;
     uint256 public gameCount;
 
+    IChickenTreasury public treasury; // unset: no NFT bonus
+    uint32 public bonusDelay; // seconds after the last movement before a game's NFT bonus can be settled
+    uint256 public lastBonusGame; // bonuses settle in game order: each takes what was earned since the previous
+    mapping(uint256 => Bonus) public bonuses;
+    mapping(uint256 => mapping(address => bool)) public bonusClaimed;
+
     mapping(uint256 => Game) internal games;
     mapping(uint256 => mapping(address => Entry)) public entries;
     mapping(uint256 => address[]) internal players;
@@ -104,6 +126,8 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
     event WatcherSet(address watcher);
     event RoundCheckSet(address core, bool enabled, uint64 genesis, uint64 roundDuration);
     event DefaultsSet(Params params, uint32 minLobby);
+    event TreasurySet(address treasury, uint32 bonusDelay);
+    event BonusSettled(uint256 indexed id, uint256 amount, uint256 each);
 
     error NotWatcher();
     error WrongStatus(Status status);
@@ -117,6 +141,7 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
     error NothingToClaim();
     error RoundCheckPending();
     error BadParams();
+    error BonusAlreadySettled();
 
     modifier onlyWatcher() {
         if (msg.sender != watcher) revert NotWatcher();
@@ -146,6 +171,14 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
             coreRoundDuration = c.roundDuration;
         }
         emit RoundCheckSet(address(core), enabled, coreGenesis, coreRoundDuration);
+    }
+
+    /// @notice Sets the treasury whose NFT rewards boost jackpots, and how long after the hamster's last
+    /// movement a game's bonus waits for those rewards to arrive (address 0 turns the bonus off).
+    function setTreasury(IChickenTreasury treasury_, uint32 bonusDelay_) external onlyOwner {
+        treasury = treasury_;
+        bonusDelay = bonusDelay_;
+        emit TreasurySet(address(treasury_), bonusDelay_);
     }
 
     /// @notice Sets the rules for games the watcher opens automatically.
@@ -224,10 +257,16 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         emit Exited(id, msg.sender, e.exitTime);
     }
 
+    /// @notice Collects a payout or refund, and the NFT jackpot bonus once it is settled. A winner who
+    /// claims before the bonus is settled claims again for the bonus.
     function claim(uint256 id) external nonReentrant returns (uint256 amount) {
-        amount = claimable(id, msg.sender);
+        Entry storage e = entries[id][msg.sender];
+        uint256 payout = e.claimed ? 0 : _payout(id, games[id], e);
+        uint256 bonus = _bonusOwed(id, games[id], e, msg.sender);
+        amount = payout + bonus;
         if (amount == 0) revert NothingToClaim();
-        entries[id][msg.sender].claimed = true;
+        if (payout > 0) e.claimed = true;
+        if (bonus > 0) bonusClaimed[id][msg.sender] = true;
         sqk.safeTransfer(msg.sender, amount);
         emit Claimed(id, msg.sender, amount);
     }
@@ -307,9 +346,37 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         }
 
         uint256 jackpotCount = _setJackpot(g, times, n, net);
+        bonuses[id].jackpotCount = uint32(jackpotCount);
         g.sumWeights = sumW;
         g.status = Status.Settled;
         emit Settled(id, pot, bounty, n, jackpotCount, msg.sender);
+    }
+
+    /// @notice Adds the NFT jackpot bonus to a finished game: half of everything the treasury's NFTs earned
+    /// since the previous bonus, so the whole run, including rewards that took time to arrive. Allowed
+    /// `bonusDelay` seconds after the hamster's last movement, in game order. Anyone can call it.
+    function settleBonus(uint256 id) external nonReentrant {
+        Game storage g = games[id];
+        if (g.status != Status.Settled && g.status != Status.RolledOver) revert WrongStatus(g.status);
+        if (id <= lastBonusGame) revert BonusAlreadySettled();
+        if (block.timestamp < uint256(g.lastMove) + bonusDelay) revert BadTime();
+        lastBonusGame = id;
+        Bonus storage b = bonuses[id];
+        b.settled = true;
+        b.settledAt = uint64(block.timestamp);
+        uint256 amount;
+        if (address(treasury) != address(0)) {
+            uint256 before = sqk.balanceOf(address(this));
+            treasury.harvest();
+            amount = sqk.balanceOf(address(this)) - before;
+        }
+        if (amount > 0 && g.status == Status.Settled) {
+            b.each = uint128(amount / b.jackpotCount);
+            rolloverPool += amount - uint256(b.each) * b.jackpotCount; // rounding dust
+        } else {
+            rolloverPool += amount; // everyone was caught: the bonus rolls over with the pot
+        }
+        emit BonusSettled(id, amount, b.each);
     }
 
     // ------------------------------------------------------------------ views
@@ -326,11 +393,16 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         return exitOrder[id];
     }
 
-    /// @notice What `player` can claim from game `id` right now.
+    /// @notice What `player` can claim from game `id` right now, including a settled NFT jackpot bonus.
     function claimable(uint256 id, address player) public view returns (uint256) {
         Game storage g = games[id];
         Entry storage e = entries[id][player];
-        if (!e.entered || e.left || e.claimed) return 0;
+        return (e.claimed ? 0 : _payout(id, g, e)) + _bonusOwed(id, g, e, player);
+    }
+
+    /// @dev The payout or refund, ignoring whether it was claimed.
+    function _payout(uint256, Game storage g, Entry storage e) internal view returns (uint256) {
+        if (!e.entered || e.left) return 0;
         if (g.status == Status.Voided) return g.p.buyIn;
         bool started = g.status >= Status.Live;
         // Late entries and exits before the start are refunded.
@@ -340,6 +412,15 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         uint256 amount = (g.curvePool * weight(g, e.exitTime)) / g.sumWeights;
         if (e.exitTime >= g.jackpotFromTime) amount += g.jackpotEach;
         return amount;
+    }
+
+    /// @dev The NFT jackpot bonus owed to a jackpot winner once settled and not yet claimed.
+    function _bonusOwed(uint256 id, Game storage g, Entry storage e, address player) internal view returns (uint256) {
+        Bonus storage b = bonuses[id];
+        if (!b.settled || b.each == 0 || bonusClaimed[id][player] || g.status != Status.Settled) return 0;
+        if (!e.entered || e.left || e.enteredAt > g.startTime || e.exitTime < g.startTime) return 0;
+        if (e.exitTime > uint256(g.lastMove) + g.p.grace || e.exitTime < g.jackpotFromTime) return 0;
+        return b.each;
     }
 
     /// @notice Weight of an exit: +25% for every `curveStep` seconds survived, interpolated within a step.

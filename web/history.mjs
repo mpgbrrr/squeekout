@@ -49,6 +49,11 @@ async function load(fromId, toId) {
       Object.assign(p, { entered, left, claimed, enteredAt: Number(enteredAt), exitTime: Number(exitTime) });
     }
   }
+  // NFT jackpot bonuses (game contracts with a treasury).
+  if (abi.some((x) => x.name === "bonuses")) {
+    const bonuses = await many(loaded.map(({ id }) => ({ address: GAME, abi, functionName: "bonuses", args: [id] })));
+    loaded.forEach((game, i) => { game.bonus = { settled: bonuses[i][0], each: bonuses[i][3] }; });
+  }
   // Winners' payouts, the same way the contract's claimable() works them out.
   const winners = loaded.flatMap((game) => Status[game.g.status] !== "Settled" ? [] : game.players
     .filter((p) => inPot(game, p) && p.exitTime && p.exitTime <= Number(game.g.lastMove) + game.g.p.grace)
@@ -56,7 +61,10 @@ async function load(fromId, toId) {
   const weights = await many(winners.map(({ game, p }) => ({ address: GAME, abi, functionName: "weightAt", args: [game.id, BigInt(p.exitTime)] })));
   winners.forEach(({ game, p }, i) => {
     p.payout = (game.g.curvePool * weights[i]) / game.g.sumWeights;
-    if (BigInt(p.exitTime) >= game.g.jackpotFromTime) { p.payout += game.g.jackpotEach; p.jackpot = true; }
+    if (BigInt(p.exitTime) >= game.g.jackpotFromTime) {
+      p.payout += game.g.jackpotEach + (game.bonus?.settled ? game.bonus.each : 0n);
+      p.jackpot = true;
+    }
   });
   games.push(...loaded);
 }
@@ -67,12 +75,22 @@ function inPot(game, p) {
   return p.entered && !p.left && (!start || (p.enteredAt <= start && !(p.exitTime && p.exitTime < start)));
 }
 
+// The NFT jackpot bonus of a finished game: paid, pending, or none.
+function bonusFact({ g, bonus }) {
+  const status = Status[g.status];
+  if (!bonus || !["Settled", "RolledOver"].includes(status)) return "";
+  if (!bonus.settled) return `NFT bonus <b>pending</b>`;
+  if (bonus.each > 0n) return `NFT bonus <b>+${amount(bonus.each)}</b> per jackpot winner`;
+  return "";
+}
+
 const LABEL = {
   Lobby: ["Lobby open", "live"], Live: ["Live now", "live"], Ended: ["Finalizing", "live"],
   Settled: ["Paid out", "settled"], Voided: ["Voided", "voided"], RolledOver: ["Everyone caught", "rolled"],
 };
 
-function card({ id, g, players }) {
+function card(game) {
+  const { id, g, players } = game;
   const status = Status[g.status], start = Number(g.startTime), lastMove = Number(g.lastMove);
   const [label, cls] = LABEL[status] || [status, ""];
   const pot = g.p.buyIn * BigInt(players.filter((p) => inPot({ g }, p)).length) + g.rolloverIn;
@@ -83,6 +101,7 @@ function card({ id, g, players }) {
     start && lastMove ? `Ran <b>${mmss(lastMove - start)}</b>` : "",
     `Players <b>${players.filter((p) => inPot({ g }, p)).length}</b>`,
     `Pot <b>${amount(pot)}</b>`,
+    bonusFact(game),
   ].filter(Boolean).join("");
   let body = "";
   if (status === "Settled") {

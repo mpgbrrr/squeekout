@@ -80,13 +80,14 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
           log("bot", { bot: bot.name, what: "gas top-up", tx: hash });
         }
       }
-      for (let id = Math.max(1, gameCount - 2); id <= gameCount; id++) {
+      // Recent games: the open lobby, and claims (an NFT jackpot bonus arrives about 40 minutes after a game).
+      for (let id = Math.max(1, gameCount - 5); id <= gameCount; id++) {
         const g = games.get(id);
         if (!g) continue;
         for (const bot of bots) {
           if (bot.busy) continue;
           const e = await pub.readContract({ address: game, abi, functionName: "entries", args: [BigInt(id), bot.account.address] });
-          const [entered, left, claimed] = [e[0], e[1], e[2]];
+          const [entered, left] = [e[0], e[1]];
           if (g.status === "Lobby" && !entered) {
             const plan = planFor(bot, id, Number(g.p.earliestStart) - now + 120);
             if (now < plan.enterAt) continue;
@@ -97,7 +98,8 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
               if (allowed < g.p.buyIn) await send(bot, sqk, token, "approve", [game, maxUint256]);
               return send(bot, game, abi, "enter", [BigInt(id)]);
             });
-          } else if (["Settled", "Voided", "RolledOver"].includes(g.status) && entered && !left && !claimed) {
+          } else if (["Settled", "Voided", "RolledOver"].includes(g.status) && entered && !left) {
+            // Claimed games are checked too: an NFT jackpot bonus can arrive after the payout was claimed.
             const owed = await pub.readContract({ address: game, abi, functionName: "claimable", args: [BigInt(id), bot.account.address] });
             if (owed > 0n) run(bot, `claim game #${id}`, () => send(bot, game, abi, "claim", [BigInt(id)]));
           }

@@ -37,6 +37,11 @@
   },
   {
     "inputs": [],
+    "name": "BonusAlreadySettled",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "GameFull",
     "type": "error"
   },
@@ -118,6 +123,31 @@
     ],
     "name": "WrongStatus",
     "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "each",
+        "type": "uint256"
+      }
+    ],
+    "name": "BonusSettled",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -521,6 +551,25 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": false,
+        "internalType": "address",
+        "name": "treasury",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "bonusDelay",
+        "type": "uint32"
+      }
+    ],
+    "name": "TreasurySet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": true,
         "internalType": "uint256",
         "name": "id",
@@ -599,6 +648,77 @@
     "name": "backstop",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "bonusClaimed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "bonusDelay",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "bonuses",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "settled",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint32",
+        "name": "jackpotCount",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "settledAt",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint128",
+        "name": "each",
+        "type": "uint128"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1095,6 +1215,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "lastBonusGame",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -1311,12 +1444,43 @@
   {
     "inputs": [
       {
+        "internalType": "contract IChickenTreasury",
+        "name": "treasury_",
+        "type": "address"
+      },
+      {
+        "internalType": "uint32",
+        "name": "bonusDelay_",
+        "type": "uint32"
+      }
+    ],
+    "name": "setTreasury",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "watcher_",
         "type": "address"
       }
     ],
     "name": "setWatcher",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      }
+    ],
+    "name": "settleBonus",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1358,6 +1522,19 @@
     "name": "transferOwnership",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "treasury",
+    "outputs": [
+      {
+        "internalType": "contract IChickenTreasury",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {

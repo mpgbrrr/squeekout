@@ -135,17 +135,18 @@ async function pollFeed() {
 
 // ---------------------------------------------------------------- chain
 
-const chainGames = new Map(); // id -> { status, p, startTime }, refreshed with every chain round
+const chainGames = new Map(); // id -> { status, p, startTime, lastMove }, refreshed with every chain round
+const RECENT = 6; // recent games kept in view (test players' claims, NFT bonuses)
 async function refreshGames() {
   const count = Number(await pub.readContract({ address: GAME, abi, functionName: "gameCount" }));
-  // Finished games never change, so only read the games still being tracked and the latest three
-  // (the test players look at those), not every game ever played.
-  const from = Math.max(1, Math.min(count - 2, ...Object.keys(saved.games).map(Number)));
+  // Finished games barely change, so only read the games still being tracked and the latest few (test
+  // players' claims and NFT bonuses look at those), not every game ever played.
+  const from = Math.max(1, Math.min(count - RECENT + 1, ...Object.keys(saved.games).map(Number)));
   for (const id of chainGames.keys()) if (id < from) chainGames.delete(id);
   for (let id = from; id <= count; id++) {
     const g = await pub.readContract({ address: GAME, abi, functionName: "getGame", args: [BigInt(id)] });
     const status = Status[Number(g.status)];
-    chainGames.set(id, { status, p: g.p, startTime: Number(g.startTime) });
+    chainGames.set(id, { status, p: g.p, startTime: Number(g.startTime), lastMove: Number(g.lastMove) });
     const key = String(id);
     if (status === "Lobby" || status === "Live" || status === "Ended") {
       if (!saved.games[key]) {
@@ -222,6 +223,34 @@ async function openNextIfIdle() {
   }
 }
 
+// ---------------------------------------------------------------- NFT jackpot bonus
+
+// Half of what the treasury's NFTs earn from a run goes to that game's jackpot. The rewards take a while to
+// arrive, so each finished game's bonus is settled `bonusDelay` after the hamster's last movement, in order.
+const hasBonus = abi.some((x) => x.name === "settleBonus");
+async function settleBonuses() {
+  if (!hasBonus) return;
+  const [treasury, delay, last] = await Promise.all(["treasury", "bonusDelay", "lastBonusGame"]
+    .map((functionName) => pub.readContract({ address: GAME, abi, functionName })));
+  if (/^0x0+$/.test(treasury)) return;
+  const now = Math.floor(Date.now() / 1000);
+  const count = Math.max(0, ...chainGames.keys());
+  for (let id = Math.max(Number(last) + 1, saved.bonusCursor ?? 1); id <= count; id++) {
+    const g = chainGames.get(id);
+    if (!g) continue; // older than the recent games in view
+    if (g.status === "Voided") { saved.bonusCursor = id + 1; continue; } // no bonus; its rewards go to the next one
+    if (g.status !== "Settled" && g.status !== "RolledOver") return;
+    if (now < g.lastMove + Number(delay)) return; // later games settle later still
+    try {
+      const hash = await send("settleBonus", [BigInt(id)]);
+      log("bonus_settled", { game: id, tx: hash });
+    } catch (e) {
+      log("bonus_retry", { game: id, error: String(e.shortMessage || e.message || e) });
+    }
+    return; // one a round, in order
+  }
+}
+
 // ---------------------------------------------------------------- main loop
 
 let busy = false;
@@ -255,6 +284,7 @@ async function chainWork() {
       if (game.status === "Ended" && !game.queue.length) await tryFinalize(id);
     }
     await openNextIfIdle();
+    await settleBonuses();
     if (bots) await bots.chainWork(Math.max(0, ...chainGames.keys()), chainGames);
     persist();
   } catch (e) {

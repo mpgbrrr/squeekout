@@ -24,6 +24,18 @@ Everyone buys in with SQK while the lobby is open. The lobby closes the moment t
 | Payout bounty | A flat SQK amount to whoever finalizes the game, capped at **1%** of the pot |
 | Feed outage | If Squeekchain's live feed drops: the game can't end while it's down. When it returns, the game carries on if the hamster didn't run during the gap, or if the gap was too short to hide a 3-minute stop. Otherwise the game is **voided and everyone refunded**. An outage over **30 minutes** also voids it. |
 | Backstop | If a game can't finish within 7 days of its earliest start, anyone can refund it |
+| NFT jackpot bonus | When a treasury is set: half of what the game's Squeek NFTs earn from the run goes to that game's jackpot winners, the other half to the developer. Paid **40 minutes** after his last movement, once the rewards have arrived |
+
+### NFT jackpot bonus
+
+Squeek NFTs earn SQK from the hamster's work once they're deposited in Squeekchain's staking (`SqueekStaking`, Sepolia `0x4b67…ea4f`). **`contracts/ChickenTreasury.sol`** holds the developer's Squeeks there. Because the treasury is the staking account, only it can claim their rewards.
+
+- Rewards reach staking 15–45 minutes after the work: his work counts in 10-minute rounds, Squeekchain settles each round a few minutes after it closes, then staking pays it out over 20 minutes.
+- So each game's bonus is settled `bonusDelay` (40 minutes) after the hamster's last movement, by `settleBonus(id)`, which the watcher calls; anyone can. The treasury claims everything earned since the previous bonus and splits it: half to the developer's balance, half to the game. The game's half is shared by the jackpot winners, who claim it on top of their payout (the claim list on the game card picks it up). If everyone was caught, it rolls over with the pot. Rewards from runs with no game live go to the next game's bonus.
+- Not exact: staking blends incoming rewards into one 20-minute stream, so if he starts a new run within the 40 minutes, a few minutes of its rewards land in the earlier game's bonus. The developer's half is unaffected.
+- The bonus is in the staking reward token, which must be the game's token: real Squeeks earn real SQK, so the bonus needs a game played in SQK (not tSQK). `scripts/deploy-treasury.js` checks this.
+- Set up: `GAME_ADDRESS=<game> npx hardhat run scripts/deploy-treasury.js --network sepolia`, then approve the treasury for your Squeeks and call `depositNfts(collection, tokenIds)` as the owner. The owner can `withdrawNfts` and `withdrawDev` at any time.
+- Locally: `scripts/e2e/treasury-setup.js` adds a stand-in staking contract (`contracts/test/Mocks.sol`) with two Squeeks, and `scripts/e2e/earn.js` credits rewards.
 
 ## How it works
 
@@ -119,4 +131,4 @@ On testnet the watcher's key is stored as a hosting environment variable. That i
 
 ## Testnet admin powers
 
-The deployer (owner) can create games, change the watcher address and configure the settled-round check. The watcher can post starts and ends, and void games. Neither can take players' SQK: refunds and winnings are paid only by the contract's rules.
+The deployer (owner) can create games, change the watcher address and configure the settled-round check, and set or remove the NFT treasury. As the treasury's owner, they can withdraw the Squeeks and the developer's half of the rewards at any time. The watcher can post starts and ends, and void games. Neither can take players' SQK: refunds and winnings are paid only by the contract's rules.
