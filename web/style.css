@@ -166,5 +166,15 @@ a.button { display: inline-block; text-align: center; text-decoration: none; bor
 .pill.live { border-color: var(--wheel); color: var(--wheel); }
 .result details summary { cursor: pointer; color: var(--ink-2); font-size: 0.9rem; }
 .result td.caught { color: var(--bad); }
+/* Results table: fits a phone without sideways scrolling; long names shorten with "…". */
+table.results { table-layout: fixed; }
+table.results th:nth-child(1) { width: 46%; } table.results th:nth-child(2) { width: 22%; } table.results th:nth-child(3) { width: 32%; }
+table.results td { white-space: normal; vertical-align: top; }
+table.results td.who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.results .medal { display: inline-block; width: 1.6em; }
+table.results td small { display: block; color: var(--ink-3); font-size: 0.75rem; }
+table.results td.pay { text-align: right; } table.results th:nth-child(3) { text-align: right; }
+table.results .tag { display: block; width: max-content; margin: 4px 0 0 auto; }
+@media (max-width: 480px) { table.results { font-size: 0.78rem; } table.results th, table.results td { padding: 7px 4px; } table.results .medal { width: 1.3em; } }
 .result td .tag { margin-left: 8px; }
 .result tr.mine td { color: var(--good); }

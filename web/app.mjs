@@ -247,11 +247,14 @@ function render() {
   else { $("fClockLbl").textContent = "Started at"; $("fClock").textContent = start ? clock(start) : "—"; }
 
   const settled = status === "Settled";
+  const over = ["Ended", "Settled", "RolledOver"].includes(status); // he has stopped: anyone still on was caught
   $("players").innerHTML = g.players.length ? g.players.map((p) => {
     const e = p.entry;
     const off = e.left ? "left the lobby" : late(e) ? "joined after the start (refunded)" : leftEarly(e) ? "left before the start (refunded)"
-      : Number(e.exitTime) ? (start ? `+${mmss(Math.max(0, Number(e.exitTime) - start))}` : clock(Number(e.exitTime))) : "still on";
-    const pay = e.claimed ? "claimed" : p.claimable > 0n ? sqk(p.claimable) : settled ? "caught" : "—";
+      : Number(e.exitTime) ? (start ? `+${mmss(Math.max(0, Number(e.exitTime) - start))}` : clock(Number(e.exitTime)))
+        + (over && Number(e.exitTime) > Number(g.lastMove) + Number(g.p.grace) ? " · too late" : "")
+      : over ? "never got off" : "still on";
+    const pay = e.claimed ? "claimed" : p.claimable > 0n ? sqk(p.claimable) : settled || status === "RolledOver" ? "Caught" : "—";
     return `<tr><td>${escapeHtml(playerName(p.addr))}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="muted">No players yet.</td></tr>`;
 

@@ -90,10 +90,13 @@ function card({ id, g, players }) {
     const won = players.filter((p) => p.payout != null).sort((a, b) => (b.payout > a.payout ? 1 : b.payout < a.payout ? -1 : 0));
     const caught = players.filter((p) => inPot({ g }, p) && p.payout == null);
     const medal = (i) => ["🥇", "🥈", "🥉"][i] ?? `#${i + 1}`;
-    body = `<div class="tablewrap"><table><thead><tr><th></th><th>Player</th><th>Got off at</th><th>Payout</th></tr></thead><tbody>${
-      won.map((p, i) => `<tr${youCls(p)}><td>${medal(i)}</td><td>${name(p)}</td><td>+${mmss(p.exitTime - start)}</td><td>${amount(p.payout)}${p.jackpot ? '<span class="tag">JACKPOT</span>' : ""}</td></tr>`).join("")
-    }${caught.map((p) => `<tr${youCls(p)}><td></td><td>${name(p)}</td><td>${p.exitTime ? `+${mmss(p.exitTime - start)} (too late)` : "still on"}</td><td class="caught">caught</td></tr>`).join("")
-    }</tbody></table></div>`;
+    // Three columns so the payout fits on a phone: the medal sits with the name.
+    body = `<table class="results"><thead><tr><th>Player</th><th>Got off</th><th>Payout</th></tr></thead><tbody>${
+      won.map((p, i) => `<tr${youCls(p)}><td class="who"><span class="medal">${medal(i)}</span>${name(p)}</td><td>+${mmss(p.exitTime - start)}</td>`
+        + `<td class="pay">${amount(p.payout)}${p.jackpot ? '<span class="tag">JACKPOT</span>' : ""}</td></tr>`).join("")
+    }${caught.map((p) => `<tr${youCls(p)}><td class="who"><span class="medal"></span>${name(p)}</td>`
+      + `<td>${p.exitTime ? `+${mmss(p.exitTime - start)}<small>too late</small>` : "<small>never got off</small>"}</td><td class="pay caught">Caught</td></tr>`).join("")
+    }</tbody></table>`;
   } else if (status === "RolledOver") {
     body = `<p class="muted">Everyone was still on the wheel when he stopped, so the pot rolled into the next game. Caught: ${
       players.filter((p) => inPot({ g }, p)).map(name).join(", ") || "nobody"}.</p>`;
