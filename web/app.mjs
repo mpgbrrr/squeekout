@@ -8,6 +8,7 @@ import { createDemo } from "/demo.mjs";
 import { signPermit } from "/permit.mjs";
 import { createFinale } from "/finale.mjs";
 import { createNames, escapeHtml, short } from "/names.mjs";
+import { createWallet, installedWallets, walletErrorText } from "/wallet.mjs";
 
 const $ = (id) => document.getElementById(id);
 const cfg = await (await fetch("/config.json")).json();
@@ -562,32 +563,84 @@ if (!store("localStorage", "betaNoticeSeen")) {
   });
 }
 
+// ---------------------------------------------------------------- wallet
+
+// The connection follows the wallet: switching account or network there updates the page.
+const conn = createWallet({
+  chain,
+  onChange({ address, wrongChain }) {
+    const changed = (address ?? "").toLowerCase() !== (me ?? "").toLowerCase();
+    me = address;
+    wallet = address ? createWalletClient({ account: address, chain, transport: custom(conn.provider) }) : null;
+    $("account").textContent = address ? names.ensName(address) ?? short(address) : "Not connected";
+    $("account").title = address ? `${address} in ${conn.name}` : "";
+    $("connect").hidden = !!address;
+    $("disconnect").hidden = !address;
+    $("switchNet").hidden = !wrongChain;
+    $("faucet").hidden = !(TEST_TOKEN && address);
+    if (changed) {
+      unclaimedCheckedAt = 0;
+      $("unclaimed").hidden = true;
+      if (game) loadGame().catch(() => {});
+    }
+  },
+});
+
+// Lets the player pick among installed wallets; resolves to the chosen one, or null.
+function pickWallet(list) {
+  const d = $("walletDialog");
+  $("walletNone").hidden = list.length > 0;
+  return new Promise((resolve) => {
+    let chosen = null;
+    $("walletList").replaceChildren(...list.map((w) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      if (w.info.icon) b.append(Object.assign(document.createElement("img"), { src: w.info.icon, alt: "" }));
+      b.append(w.info.name);
+      b.onclick = () => { chosen = w; d.close(); };
+      return b;
+    }));
+    d.addEventListener("close", () => resolve(chosen), { once: true });
+    d.showModal();
+  });
+}
+
 async function connect() {
   // Ask once per visit before any wallet connects.
   if (!store("sessionStorage", "betaAgreed")) {
     if (!(await showBetaNotice())) return;
     store("sessionStorage", "betaAgreed", "1");
   }
-  if (!window.ethereum) { msg("Install a browser wallet such as MetaMask to play.", true); return; }
-  wallet = createWalletClient({ chain, transport: custom(window.ethereum) });
-  [me] = await wallet.requestAddresses();
-  try { await wallet.switchChain({ id: chain.id }); } catch { msg("Switch your wallet to the Sepolia test network.", true); }
-  $("account").textContent = names.ensName(me) ?? short(me);
-  $("connect").hidden = true;
-  $("faucet").hidden = !TEST_TOKEN;
-  await loadGame();
+  const list = await installedWallets();
+  const w = list.length === 1 ? list[0] : await pickWallet(list);
+  if (!w) return;
+  try {
+    msg(`Approve the connection in ${w.info.name}…`);
+    if (!(await conn.connect(w))) { msg("No account was shared.", true); return; }
+    msg("");
+  } catch (e) {
+    msg(walletErrorText(e), true);
+    return;
+  }
+  try { await conn.ensureChain(); } catch (e) { msg(walletErrorText(e), true); }
 }
+$("disconnect").onclick = () => { conn.disconnect(); msg(""); };
+$("switchNet").onclick = () => conn.ensureChain().then(() => msg(""), (e) => msg(walletErrorText(e), true));
+conn.reconnect().catch(() => {}); // the wallet used last time, if it still allows this site: no prompt
 
 async function tx(functionName, args, address = GAME, contractAbi = abi) {
-  msg("Confirm in your wallet…");
   try {
+    if (!me || !wallet) throw new Error("Connect a wallet first.");
+    await conn.ensureChain();
     const { request } = await pub.simulateContract({ account: me, address, abi: contractAbi, functionName, args });
+    msg(`Confirm in ${conn.name ?? "your wallet"}…`);
     const hash = await wallet.writeContract(request);
     msg("Waiting for the transaction to confirm…");
-    await pub.waitForTransactionReceipt({ hash });
+    const receipt = await pub.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error("The transaction failed on chain, so nothing changed.");
     msg("Done.");
   } catch (e) {
-    msg(e.shortMessage || e.message || String(e), true);
+    msg(walletErrorText(e), true);
     throw e;
   } finally {
     await loadGame();
@@ -604,6 +657,7 @@ async function enter(g) {
     return;
   }
   if (allowance >= g.p.buyIn) return tx("enter", [g.id]);
+  try { await conn.ensureChain(); } catch (e) { msg(walletErrorText(e), true); return; } // the signature names the chain
   // One signature (free) plus one transaction. If the wallet can't sign permits, approve then enter.
   let permit = null;
   try {
@@ -613,7 +667,7 @@ async function enter(g) {
       sign: (typedData) => wallet.signTypedData({ account: me, ...typedData }),
     });
   } catch (e) {
-    if (e.code === 4001 || /reject|denied|cancel/i.test(e.shortMessage || e.message || "")) { msg("Cancelled."); return; }
+    if (walletErrorText(e) === "You cancelled it in your wallet.") { msg("Cancelled."); return; }
     console.warn("Permit signing failed; approving instead", e);
   }
   if (permit) return tx("enterWithPermit", [g.id, permit.deadline, permit.v, permit.r, permit.s]);

@@ -22,12 +22,21 @@
     <button class="secondary" value="cancel">Not now</button>
   </form>
 </dialog>
+<dialog class="beta wallets" id="walletDialog" aria-labelledby="walletTitle">
+  <h2 id="walletTitle">Connect a wallet</h2>
+  <p class="muted">Use a throwaway wallet made for testing.</p>
+  <div class="wallet-list" id="walletList"></div>
+  <p class="muted" id="walletNone" hidden>No browser wallet found. Install <a href="https://metamask.io/download/" target="_blank" rel="noopener">MetaMask</a> or <a href="https://rabby.io" target="_blank" rel="noopener">Rabby</a>, or on a phone open this page in your wallet app's built-in browser.</p>
+  <form method="dialog"><button class="secondary" value="cancel">Cancel</button></form>
+</dialog>
 <header>
   <h1>Squeekchain Chicken</h1>
   <nav class="nav" aria-label="Pages"><a href="/" aria-current="page">Play</a><a href="/history.html">Results</a></nav>
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
     <span class="muted" id="account">Not connected</span>
+    <button class="secondary" id="switchNet" hidden>Switch to Sepolia</button>
     <button class="secondary" id="connect">Connect wallet</button>
+    <button class="secondary small" id="disconnect" hidden>Disconnect</button>
   </div>
 </header>
 <main>

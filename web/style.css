@@ -87,6 +87,11 @@ dialog.beta h2 { margin: 0 0 10px; font-family: var(--pixel); font-size: 0.9rem;
 dialog.beta ul { margin: 0 0 16px; padding-left: 20px; display: grid; gap: 6px; }
 dialog.beta form { display: flex; flex-wrap: wrap; gap: 10px; }
 dialog.beta button { flex: 1 1 auto; }
+.wallet-list { display: grid; gap: 8px; margin-bottom: 14px; }
+.wallet-list button { display: flex; align-items: center; gap: 12px; text-align: left; background: rgba(13, 17, 38, 0.6); color: var(--ink); border: 1px solid var(--line); }
+.wallet-list button:hover { border-color: var(--wheel); }
+.wallet-list img { width: 28px; height: 28px; border-radius: 6px; }
+button.small { padding: 8px 12px; font-size: 0.85rem; }
 .banner { border: 1px dashed var(--wheel); color: var(--wheel); border-radius: 10px; padding: 10px 14px; font-size: 0.92rem; }
 .howto { display: grid; gap: 14px; }
 .howto ol { margin: 0; padding-left: 1.4em; display: grid; gap: 10px; max-width: 70ch; }

@@ -3,6 +3,7 @@
 import { createPublicClient, http, formatUnits, parseAbi } from "https://esm.sh/viem@2.21.55";
 import { hardhat, sepolia } from "https://esm.sh/viem@2.21.55/chains";
 import { createNames, escapeHtml } from "/names.mjs";
+import { quietAddress } from "/wallet.mjs";
 
 const $ = (id) => document.getElementById(id);
 const cfg = await (await fetch("/config.json")).json();
@@ -20,7 +21,7 @@ const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 const when = (t) => new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 // Highlight the visitor's own wallet if it's already connected to this site (no prompt).
-const me = await window.ethereum?.request({ method: "eth_accounts" }).then((a) => a?.[0]?.toLowerCase(), () => null) ?? null;
+const me = (await quietAddress())?.toLowerCase() ?? null;
 const games = []; // loaded games, newest first
 const names = createNames(cfg.bots || [], () => render());
 
