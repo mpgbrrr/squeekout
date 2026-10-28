@@ -4,6 +4,7 @@ import { hardhat, sepolia } from "https://esm.sh/viem@2.21.55/chains";
 import { display, newGameState, readingFromStatus, step } from "/shared/rules.js";
 import { createHamster } from "/hamster.mjs";
 import { createDemo } from "/demo.mjs";
+import { signPermit } from "/permit.mjs";
 
 const $ = (id) => document.getElementById(id);
 const cfg = await (await fetch("/config.json")).json();
@@ -448,7 +449,21 @@ async function enter(g) {
     msg(`You need ${sqk(g.p.buyIn)} on Sepolia; you have ${sqk(bal)}.${TEST_TOKEN ? ` Use "Get ${sqk(FAUCET)}" first.` : ""}`, true);
     return;
   }
-  if (allowance < g.p.buyIn) await tx("approve", [GAME, g.p.buyIn], SQK, erc20);
+  if (allowance >= g.p.buyIn) return tx("enter", [g.id]);
+  // One signature (free) plus one transaction. If the wallet can't sign permits, approve then enter.
+  let permit = null;
+  try {
+    msg("Sign the buy-in in your wallet (a free signature, not a transaction)…");
+    permit = await signPermit({
+      pub, token: SQK, owner: me, spender: GAME, value: g.p.buyIn, chainId: chain.id,
+      sign: (typedData) => wallet.signTypedData({ account: me, ...typedData }),
+    });
+  } catch (e) {
+    if (e.code === 4001 || /reject|denied|cancel/i.test(e.shortMessage || e.message || "")) { msg("Cancelled."); return; }
+    console.warn("Permit signing failed; approving instead", e);
+  }
+  if (permit) return tx("enterWithPermit", [g.id, permit.deadline, permit.v, permit.r, permit.s]);
+  await tx("approve", [GAME, g.p.buyIn], SQK, erc20);
   await tx("enter", [g.id]);
 }
 
