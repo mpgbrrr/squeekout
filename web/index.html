@@ -5,102 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Squeekchain Chicken</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
-<style>
-/* Layout: hamster cam on the left, the game card on the right; players and the watcher log below. */
-:root {
-  color-scheme: dark;
-  --bg: #0d1126; --panel: #161c3a; --line: #2b3463; --ink: #eef0ff; --ink-2: #aab2d8; --ink-3: #7f88b5;
-  --wheel: #f2c94c; --sqk: #e8913a; --good: #3ccf7a; --bad: #ef5d5d; --warn: #f5b84a;
-  --pixel: "Press Start 2P", ui-monospace, monospace;
-  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5;
-  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-header, main { max-width: 1080px; margin: 0 auto; }
-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 20px 8px; }
-h1 { font-family: var(--pixel); font-size: 1.05rem; line-height: 1.6; margin: 0; color: var(--wheel); }
-h2 { font-family: var(--pixel); font-size: 0.7rem; letter-spacing: 0.04em; margin: 0 0 12px; color: var(--ink-2); }
-main { display: grid; gap: 18px; padding-block: 8px 48px; }
-.top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; }
-@media (max-width: 780px) { .top { grid-template-columns: 1fr; } }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
-canvas { width: 100%; aspect-ratio: 4 / 3; image-rendering: pixelated; border-radius: 8px; display: block; background: #141a33; }
-.camwrap { position: relative; }
-.hud-count { position: absolute; top: 10px; left: 10px; display: grid; justify-items: start; gap: 2px; padding: 8px 12px;
-  background: rgba(13, 17, 38, 0.82); border: 1px solid var(--line); border-radius: 8px; }
-.hud-count b { font-family: var(--pixel); font-size: 1.15rem; line-height: 1.2; color: var(--wheel); font-variant-numeric: tabular-nums; }
-.hud-count small { font-size: 0.7em; color: var(--ink-2); }
-.hud-count > span { font-size: 0.72rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
-.hud-feed { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; padding: 8px 12px; list-style: none; display: grid; gap: 2px;
-  background: linear-gradient(to top, rgba(13, 17, 38, 0.92), rgba(13, 17, 38, 0.72)); border-radius: 0 0 8px 8px;
-  font-family: var(--mono); font-size: 0.8rem; line-height: 1.45; }
-.hud-feed li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
-.hud-feed li:first-child { color: var(--ink); }
-.hud-feed li:nth-child(3) { opacity: 0.6; }
-.hud-feed li.fresh { animation: hud-in 0.5s ease-out; }
-.hud-feed .when { color: var(--ink-3); margin-right: 8px; }
-.hud-feed .off { color: var(--good); } .hud-feed .bad { color: var(--bad); } .hud-feed .ham { color: var(--wheel); }
-@keyframes hud-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .hud-feed li.fresh { animation: none; } }
-@media (max-width: 480px) { .hud-feed li:nth-child(3) { display: none; } .hud-feed { font-size: 0.72rem; } .hud-count b { font-size: 0.9rem; } }
-.cam-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 12px; align-items: baseline; }
-.mode { font-family: var(--pixel); font-size: 0.72rem; line-height: 1.7; }
-.mode.running { color: var(--good); } .mode.paused { color: var(--warn); } .mode.asleep { color: var(--ink-2); } .mode.signal-lost { color: var(--bad); }
-.countdown { font-family: var(--mono); font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.timer { display: grid; justify-items: end; line-height: 1.2; }
-.timer-lbl { font-size: 0.75rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; }
-.muted { color: var(--ink-2); font-size: 0.92rem; }
-a { color: var(--wheel); }
-.pill { display: inline-block; font-family: var(--mono); font-size: 0.8rem; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); }
-.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 14px 0; }
-.facts div { display: grid; }
-.facts b { font-family: var(--mono); font-size: 1.05rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.facts span { color: var(--ink-3); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
-.you { border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 10px; }
-button { font: inherit; cursor: pointer; border-radius: 10px; border: 0; padding: 12px 16px; font-weight: 700; }
-button.primary { background: var(--wheel); color: #1a1405; font-family: var(--pixel); font-size: 0.72rem; line-height: 1.6; padding: 16px; }
-button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
-button:disabled { opacity: 0.45; cursor: not-allowed; }
-button:focus-visible { outline: 2px solid var(--wheel); outline-offset: 2px; }
-.actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.actions button.primary { flex: 1 1 100%; }
-.msg { font-size: 0.9rem; min-height: 1.4em; }
-.msg.error { color: var(--bad); }
-.tablewrap { overflow-x: auto; }
-#players td:first-child { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
-th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { color: var(--ink-3); font-family: var(--body); font-weight: 700; font-size: 0.78rem; }
-.bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
-@media (max-width: 780px) { .bottom { grid-template-columns: 1fr; } }
-.log { font-family: var(--mono); font-size: 0.8rem; max-height: 320px; overflow: auto; display: grid; gap: 6px; }
-.log div { color: var(--ink-2); overflow-wrap: anywhere; }
-.log b { color: var(--ink); }
-.demo-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
-.demo-row button { padding: 8px 12px; }
-.speed { display: inline-flex; gap: 4px; }
-.speed button { padding: 6px 10px; font-family: var(--mono); font-weight: 600; }
-.speed button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
-.beta-strip { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; justify-content: center; padding: 8px 16px;
-  background: #3a2a08; color: #ffe2a3; border-bottom: 1px solid var(--warn); font-size: 0.88rem; text-align: center; }
-.beta-strip b { font-family: var(--pixel); font-size: 0.62rem; color: #1a1405; background: var(--warn); padding: 4px 6px; border-radius: 4px; }
-.beta-strip button { background: none; border: none; padding: 0; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; }
-dialog.beta { max-width: 460px; width: calc(100% - 32px); background: var(--panel, #141a33); color: var(--ink); border: 1px solid var(--warn);
-  border-radius: 12px; padding: 22px; }
-dialog.beta::backdrop { background: rgba(5, 7, 18, 0.75); }
-dialog.beta h2 { margin: 0 0 10px; font-family: var(--pixel); font-size: 0.9rem; line-height: 1.6; color: var(--warn); }
-dialog.beta ul { margin: 0 0 16px; padding-left: 20px; display: grid; gap: 6px; }
-dialog.beta form { display: flex; flex-wrap: wrap; gap: 10px; }
-dialog.beta button { flex: 1 1 auto; }
-.banner { border: 1px dashed var(--wheel); color: var(--wheel); border-radius: 10px; padding: 10px 14px; font-size: 0.92rem; }
-.howto { display: grid; gap: 14px; }
-.howto ol { margin: 0; padding-left: 1.4em; display: grid; gap: 10px; max-width: 70ch; }
-.howto ol b { color: var(--wheel); }
-.howto ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; color: var(--ink-2); max-width: 70ch; }
-.howto h3 { font-family: var(--pixel); font-size: 0.62rem; color: var(--ink-2); margin: 6px 0 0; letter-spacing: 0.04em; }
-</style>
+<link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <div class="beta-strip" role="note"><b>TESTING</b> This game is still being tested on the Sepolia testnet. Use a throwaway wallet. <button id="betaMore" type="button">Read more</button></div>
@@ -119,6 +24,7 @@ dialog.beta button { flex: 1 1 auto; }
 </dialog>
 <header>
   <h1>Squeekchain Chicken</h1>
+  <nav class="nav" aria-label="Pages"><a href="/" aria-current="page">Play</a><a href="/history.html">Results</a></nav>
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
     <span class="muted" id="account">Not connected</span>
     <button class="secondary" id="connect">Connect wallet</button>
@@ -133,6 +39,7 @@ dialog.beta button { flex: 1 1 auto; }
         <canvas id="cam" aria-label="Animated hamster showing whether Squeektoshi is running"></canvas>
         <div class="hud-count" id="hudCount" hidden><b><span id="hudOn">0</span><small id="hudOf"></small></b><span id="hudLbl">still on</span></div>
         <ol class="hud-feed" id="hudFeed" aria-live="polite" aria-label="Latest game events" hidden></ol>
+        <div class="final-count" id="finalCount" hidden aria-live="assertive"></div>
       </div>
       <div class="cam-status">
         <span class="mode asleep" id="mode">Loading feed…</span>
@@ -166,6 +73,7 @@ dialog.beta button { flex: 1 1 auto; }
           <button class="secondary" id="faucet" hidden>Get free test tokens</button>
         </div>
         <div class="msg" id="msg" role="status"></div>
+        <div class="unclaimed" id="unclaimed" hidden></div>
       </div>
     </div>
   </section>
@@ -197,6 +105,23 @@ dialog.beta button { flex: 1 1 auto; }
     </div>
   </section>
 </main>
+<dialog class="finale" id="finale" aria-labelledby="finaleTitle">
+  <div class="finale-card">
+    <p class="finale-kicker" id="finaleKicker"></p>
+    <h2 class="finale-title" id="finaleTitle">Game over</h2>
+    <p class="finale-sub" id="finaleSub"></p>
+    <p class="finale-you" id="finaleYou" hidden></p>
+    <ol class="podium" id="finaleWinners" aria-label="Winners"></ol>
+    <p class="muted" id="finaleCaught"></p>
+    <p class="muted" id="finaleNote"></p>
+    <form method="dialog" class="finale-actions">
+      <button class="primary" type="button" id="finaleClaim" hidden></button>
+      <button class="primary" value="close" id="finaleClose">Nice!</button>
+      <a class="button" href="/history.html">All results</a>
+    </form>
+  </div>
+</dialog>
+<canvas class="confetti" id="confetti" popover="manual" aria-hidden="true"></canvas>
 <script type="module" src="/app.mjs"></script>
 </body>
 </html>

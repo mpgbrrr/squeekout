@@ -1,10 +1,13 @@
 // Squeekchain Chicken web app: the hamster cam, the current game, and the player's actions.
 import { createPublicClient, createWalletClient, custom, http, formatUnits, parseAbi } from "https://esm.sh/viem@2.21.55";
-import { hardhat, mainnet, sepolia } from "https://esm.sh/viem@2.21.55/chains";
-import { display, newGameState, readingFromStatus, step } from "/shared/rules.js";
+import { hardhat, sepolia } from "https://esm.sh/viem@2.21.55/chains";
+import { DEFAULTS, display, newGameState, readingFromStatus, step } from "/shared/rules.js";
+import { settle } from "/shared/payouts.js";
 import { createHamster } from "/hamster.mjs";
 import { createDemo } from "/demo.mjs";
 import { signPermit } from "/permit.mjs";
+import { createFinale } from "/finale.mjs";
+import { createNames, escapeHtml, short } from "/names.mjs";
 
 const $ = (id) => document.getElementById(id);
 const cfg = await (await fetch("/config.json")).json();
@@ -29,24 +32,9 @@ const Status = ["None", "Lobby", "Live", "Ended", "Settled", "Voided", "RolledOv
 let wallet = null, me = null, game = null;
 let demo = null; // a practice game in progress takes over the cam and the game card
 const sqk = (v) => `${Number(formatUnits(v, 18)).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${SYMBOL}`;
-const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-
-// Players show by their ENS name when their address has one (looked up on Ethereum mainnet, where ENS
-// names live, and checked both ways by viem), otherwise by short address. Test players run by the
-// watcher show by name with a robot.
-const ens = createPublicClient({ chain: mainnet, transport: http("https://ethereum-rpc.publicnode.com") });
-const ensNames = new Map(); // lowercase address -> name, or null while looking up / when there is none
-function ensName(a) {
-  const k = a.toLowerCase();
-  if (!ensNames.has(k)) {
-    ensNames.set(k, null);
-    ens.getEnsName({ address: a }).then((name) => name && ensNames.set(k, name)).catch(() => {});
-  }
-  return ensNames.get(k);
-}
-const BOTS = new Map((cfg.bots || []).map((b) => [b.address.toLowerCase(), b.name]));
-const playerName = (a) => (BOTS.has(a.toLowerCase()) ? `🤖 ${BOTS.get(a.toLowerCase())}` : ensName(a) ?? short(a));
+// When an ENS name arrives for the connected account, show it in the header.
+const names = createNames(cfg.bots || [], () => { const n = me && names.ensName(me); if (n) $("account").textContent = n; });
+const playerName = names.playerName;
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
@@ -141,6 +129,7 @@ function showTimer(view, runClock, now, counting) {
 }
 
 const cam = createHamster($("cam"));
+const finale = createFinale();
 let rules = newGameState(0);
 let reading = null;
 let liveView = { mode: "asleep" };
@@ -154,7 +143,9 @@ async function pollFeed() {
     // keep the last reading; it ages out and the cam shows the signal as lost
   }
   const now = Math.floor(Date.now() / 1000);
-  rules = step({ ...rules, phase: rules.phase === "done" ? "live" : rules.phase }, reading, now).state;
+  const stepped = step({ ...rules, phase: rules.phase === "done" ? "live" : rules.phase }, reading, now);
+  rules = stepped.state;
+  if (stepped.decision?.type === "end") celebrateLive(stepped.decision.lastMove);
   if (demo) return;
   const view = display(rules, reading, now);
   liveRun.update(view, rules.lastMove, now);
@@ -176,6 +167,8 @@ setInterval(pollFeed, 2000);
 pollFeed();
 
 // ---------------------------------------------------------------- game state
+
+const seenStatus = new Map(); // game id -> status last seen by this page
 
 async function loadGame() {
   const count = await pub.readContract({ address: GAME, abi, functionName: "gameCount" });
@@ -200,6 +193,12 @@ async function loadGame() {
   // The entries getter returns a plain list; name its fields.
   const entry = ([entered, left, claimed, enteredAt, exitTime]) => ({ entered, left, claimed, enteredAt, exitTime });
   game = { id, ...g, players: players.map((p, i) => ({ addr: p, entry: entry(results[2 * i]), claimable: results[2 * i + 1] })) };
+  // The game ended while this page was open: celebrate, if the feed didn't already trigger it.
+  const status = Status[Number(g.status)], before = seenStatus.get(id);
+  seenStatus.set(id, status);
+  if (before === "Live" && ["Ended", "Settled", "RolledOver"].includes(status)) celebrateLive(Number(g.lastMove));
+  updateFinaleClaim().catch(() => {});
+  updateUnclaimed(id).catch(() => {});
   if (rules.earliestStart !== Number(g.p.earliestStart)) rules = { ...rules, earliestStart: Number(g.p.earliestStart) };
   render();
 }
@@ -290,9 +289,124 @@ function render() {
   }
 }
 
+// ---------------------------------------------------------------- end of a game
+
+// Seconds until a live game ends if he stays still, while he's on a break; otherwise null.
+function liveSecondsLeft(now) {
+  const live = game && Status[Number(game.status)] === "Live";
+  return live && liveView.mode === "paused" && rules.lastMove != null ? rules.lastMove + DEFAULTS.idleWindow - now : null;
+}
+
+const celebrated = new Set(); // game ids already celebrated on this page
+let finaleGame = null; // the celebrated game you won, while its celebration offers a claim
+
+// The celebration's claim button: waits for the game to be finalized on chain, then claims.
+async function updateFinaleClaim() {
+  const btn = $("finaleClaim");
+  const open = $("finale").open && finaleGame != null && me && !demo;
+  btn.hidden = !open;
+  $("finaleClose").className = open ? "secondary" : "primary"; // one main button at a time
+  if (!open || btn.dataset.busy) return;
+  const [g, owed] = await Promise.all([
+    pub.readContract({ address: GAME, abi, functionName: "getGame", args: [finaleGame] }),
+    pub.readContract({ address: GAME, abi, functionName: "claimable", args: [finaleGame, me] }),
+  ]);
+  if (owed > 0n) {
+    btn.disabled = false;
+    btn.textContent = `Claim ${sqk(owed)}`;
+    btn.onclick = async () => {
+      btn.dataset.busy = "1";
+      btn.disabled = true;
+      btn.textContent = "Claiming…";
+      try { await tx("claim", [finaleGame]); btn.textContent = "Claimed ✓"; } catch { btn.disabled = false; btn.textContent = "Try the claim again"; }
+      delete btn.dataset.busy;
+    };
+  } else {
+    btn.disabled = true;
+    btn.textContent = Status[Number(g.status)] === "Settled" ? "Claimed ✓" : "Claim unlocks when payouts are final…";
+  }
+}
+$("finale").addEventListener("close", () => { finaleGame = null; });
+
+// Winnings and refunds still waiting in recent games (the game card only shows the current one).
+let unclaimedCheckedAt = 0;
+async function updateUnclaimed(currentId) {
+  if (!me || demo || Date.now() - unclaimedCheckedAt < 20_000) return;
+  unclaimedCheckedAt = Date.now();
+  const ids = [];
+  for (let id = currentId - 1n; id >= 1n && ids.length < 10; id--) ids.push(id);
+  const calls = ids.map((id) => ({ address: GAME, abi, functionName: "claimable", args: [id, me] }));
+  let owed = [];
+  try { owed = await pub.multicall({ contracts: calls, allowFailure: false }); } catch { owed = await Promise.all(calls.map((c) => pub.readContract(c))); }
+  const box = $("unclaimed");
+  const items = ids.map((id, i) => ({ id, owed: owed[i] })).filter((x) => x.owed > 0n);
+  box.hidden = !items.length;
+  box.replaceChildren(...(items.length ? [Object.assign(document.createElement("p"), { textContent: "You have winnings to claim" })] : []),
+    ...items.map(({ id, owed: amt }) => {
+      const b = Object.assign(document.createElement("button"), { className: "secondary", textContent: `Claim ${sqk(amt)} from game #${id}` });
+      b.onclick = async () => { b.disabled = true; try { await tx("claim", [id]); } finally { unclaimedCheckedAt = 0; await updateUnclaimed(currentId); } };
+      return b;
+    }));
+}
+const caughtLine = (who, rolledOver, pot) => (rolledOver ? `Everyone was caught, so the ${pot} pot rolls into the next game.`
+  : who.length ? `Caught on the wheel: ${who.join(", ")}` : "Nobody got caught!");
+
+// A real game just ended. Payouts are estimated with the contract's maths until it's finalized on chain.
+function celebrateLive(lastMove) {
+  const g = game;
+  if (demo || !g || !lastMove || celebrated.has(g.id) || !Number(g.startTime)) return;
+  if (!["Live", "Ended", "Settled", "RolledOver"].includes(Status[Number(g.status)])) return;
+  const start = Number(g.startTime);
+  const inGame = g.players.filter((p) => !p.entry.left && Number(p.entry.enteredAt) <= start
+    && !(Number(p.entry.exitTime) && Number(p.entry.exitTime) < start));
+  if (!inGame.length) return;
+  celebrated.add(g.id);
+  const exits = inGame.filter((p) => Number(p.entry.exitTime)).sort((a, b) => Number(a.entry.exitTime) - Number(b.entry.exitTime))
+    .map((p) => ({ id: p.addr.toLowerCase(), t: Number(p.entry.exitTime) - start }));
+  const r = settle({ buyIn: Number(formatUnits(g.p.buyIn, 18)), inPot: inGame.length, rollover: Number(formatUnits(g.rolloverIn, 18)), exits, lastMove: lastMove - start });
+  const isMe = (p) => me && p.addr.toLowerCase() === me.toLowerCase();
+  const name = (p) => (isMe(p) ? "You" : playerName(p.addr));
+  const amount = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${SYMBOL}`;
+  const winners = inGame.filter((p) => r.payouts.has(p.addr.toLowerCase())).map((p) => {
+    const pay = r.payouts.get(p.addr.toLowerCase());
+    return { name: name(p), you: isMe(p), total: pay.total, amount: amount(pay.total), jackpot: pay.jackpot > 0, at: `+${mmss(Number(p.entry.exitTime) - start)}` };
+  }).sort((a, b) => b.total - a.total);
+  const mine = inGame.find(isMe), myPay = mine && r.payouts.get(mine.addr.toLowerCase());
+  finaleGame = myPay ? g.id : null;
+  finale.celebrate({
+    kicker: `Game #${g.id}`,
+    title: r.rolledOver ? "Everyone caught!" : "Game over!",
+    subtitle: `Squeektoshi stopped at +${mmss(lastMove - start)}. ${winners.length} of ${inGame.length} got off in time.`,
+    you: !mine ? null : myPay ? { kind: "won", text: `You won ${amount(myPay.total)}!` } : { kind: "caught", text: "You were still on the wheel: caught!" },
+    winners,
+    caught: caughtLine(inGame.filter((p) => !r.payouts.has(p.addr.toLowerCase())).map(name), r.rolledOver, amount(r.pot)),
+    note: r.rolledOver ? "" : "Payouts are estimates until the game is finalized on chain, usually 5–20 minutes after he stops. Winners can then claim here or on the game card.",
+  });
+  updateFinaleClaim().catch(() => {});
+}
+
+function celebrateDemo() {
+  const s = demo.state, r = s.result, players = demo.players;
+  const name = (p) => (p.you ? "You" : p.name);
+  const winners = players.filter((p) => r.payouts.has(p.id)).map((p) => {
+    const pay = r.payouts.get(p.id);
+    return { name: name(p), you: p.you, total: pay.total, amount: demoSqk(pay.total), jackpot: pay.jackpot > 0, at: `+${mmss(p.exit)}` };
+  }).sort((a, b) => b.total - a.total);
+  const mine = r.payouts.get("you");
+  finaleGame = null;
+  finale.celebrate({
+    kicker: "Demo game",
+    title: r.rolledOver ? "Everyone caught!" : "Game over!",
+    subtitle: `Squeektoshi stopped at +${mmss(s.lastMove - s.start)}. ${winners.length} of ${players.length} got off in time.`,
+    you: mine ? { kind: "won", text: `You won ${demoSqk(mine.total)}!` } : { kind: "caught", text: "You were still on the wheel: caught!" },
+    winners,
+    caught: caughtLine(players.filter((p) => !r.payouts.has(p.id)).map(name), r.rolledOver, demoSqk(r.pot)),
+  });
+}
+
 // ---------------------------------------------------------------- demo mode
 
-let demoSpeed = 5, demoTimer = null, demoRun = null;
+let demoSpeed = 5, demoTimer = null, demoRun = null, demoCelebrated = false;
 const demoMoments = createMoments();
 const LIVE_HELP = `The cartoon follows Squeekchain's live wheel data. Watch the real hamster at <a href="https://squeekchain.com" target="_blank" rel="noopener">squeekchain.com</a>.`;
 const demoSqk = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} SQK`;
@@ -300,6 +414,9 @@ const demoSqk = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 }
 function startDemo() {
   demo = createDemo();
   demoRun = createRunClock();
+  demoCelebrated = false;
+  finale.close();
+  $("unclaimed").hidden = true;
   demoMoments.reset();
   lastFeedKey = "";
   $("demoBanner").hidden = false;
@@ -319,6 +436,8 @@ function stopDemo() {
   demoTimer = null;
   demo = null;
   lastFeedKey = "";
+  finale.close();
+  unclaimedCheckedAt = 0;
   $("demoBanner").hidden = true;
   $("speed").hidden = true;
   $("demoToggle").textContent = "Play a demo game";
@@ -340,6 +459,8 @@ function renderDemo() {
   }[view.mode];
   $("mode").className = `mode ${view.mode}`;
   showTimer(view, demoRun, s.t, s.phase === "live");
+  finale.countdown(s.phase === "live" && view.mode === "paused" ? s.rules.lastMove + DEFAULTS.idleWindow - s.t : null);
+  if (s.phase === "ended" && !demoCelebrated) { demoCelebrated = true; celebrateDemo(); }
   if (s.phase !== "lobby") demoMoments.update(view.mode, s.t);
   const stillOn = players.filter((p) => p.exit == null).length;
   const events = [...demoMoments.list];
@@ -434,8 +555,7 @@ async function connect() {
   wallet = createWalletClient({ chain, transport: custom(window.ethereum) });
   [me] = await wallet.requestAddresses();
   try { await wallet.switchChain({ id: chain.id }); } catch { msg("Switch your wallet to the Sepolia test network.", true); }
-  $("account").textContent = short(me);
-  ens.getEnsName({ address: me }).then((name) => name && ($("account").textContent = name)).catch(() => {});
+  $("account").textContent = names.ensName(me) ?? short(me);
   $("connect").hidden = true;
   $("faucet").hidden = !TEST_TOKEN;
   await loadGame();
@@ -515,7 +635,12 @@ setInterval(loadLog, 10000);
 setInterval(() => {
   if (game) render();
   // Keep the run clock ticking between feed readings.
-  if (!demo) showTimer(liveView, liveRun, Math.floor(Date.now() / 1000), true);
+  if (!demo) {
+    const now = Math.floor(Date.now() / 1000), left = liveSecondsLeft(Date.now() / 1000);
+    // Count the break down every second, not only when a reading arrives.
+    showTimer(liveView.mode === "paused" && left != null ? { ...liveView, remaining: Math.max(0, Math.ceil(left)) } : liveView, liveRun, now, true);
+    finale.countdown(left);
+  }
 }, 1000);
 loadGame();
 loadLog();

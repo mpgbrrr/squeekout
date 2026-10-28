@@ -37,7 +37,12 @@ Squeekchain live feed ──► watcher ──► SqueekChicken contract ◄─�
 - **`contracts/SqueekChicken.sol`**: holds the buy-ins and pays out. The watcher can only post when the game started and when the hamster last moved, or void a game; it can't move money or pick winners. Optionally, `finalize` checks the watcher's end claim against Squeekchain's settled rounds (`SqueekCore`) before paying.
 - **`shared/rules.js`**: the game rules for reading the feed. The watcher uses them to decide, and the web app uses the same file to animate the hamster, so what players see matches what the watcher decides.
 - **`watcher/watcher.mjs`**: reads the feed every second, posts decisions, finalizes ended games, and serves the web app plus a public log at `/log`.
-- **`web/`**: the web app, including the 8-bit hamster cam.
+- **`web/`**: the web app.
+  - `index.html` / `app.mjs`: the hamster cam with the players-still-on count and activity feed, the game card, and joining with a signed permit (one signature and one transaction).
+  - `finale.mjs`: the end of a game. A big countdown over the wheel in the last 10 seconds of a break, then the celebration: winners, payouts, confetti and a claim button that unlocks once the game is finalized.
+  - `history.html` / `history.mjs`: the results page, with every game's winners, payouts (worked out exactly as the contract's `claimable()` does) and who was caught.
+  - `names.mjs`: players show by ENS name (looked up on Ethereum mainnet) or short address; the watcher's test players by name.
+  - Winnings from earlier games can be claimed from the game card's "winnings to claim" list, since the card moves on to the next game as soon as one is finalized.
 
 ## Develop
 
@@ -62,6 +67,7 @@ CHAIN=hardhat RPC_URL=http://127.0.0.1:8545 SQUEEK_API=http://127.0.0.1:8787 \
   node watcher/watcher.mjs                                           # terminal 3, then open http://localhost:3000
 PLAYER=0 GAME=<game> npx hardhat run scripts/e2e/exit.js --network localhost  # a player gets off
 GAME=<game> npx hardhat run scripts/e2e/report.js --network localhost         # outcome and payouts
+GAME=<game> npx hardhat run scripts/e2e/second-game.js --network localhost    # optional: a 2nd game on the same run (exit with GAME_ID=2)
 ```
 
 ## Deploy to Sepolia

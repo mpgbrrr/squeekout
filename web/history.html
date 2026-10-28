@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chicken Results</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="beta-strip" role="note"><b>TESTING</b> This game is still being tested on the Sepolia testnet. Use a throwaway wallet.</div>
+<header>
+  <h1>Squeekchain Chicken</h1>
+  <nav class="nav" aria-label="Pages"><a href="/">Play</a><a href="/history.html" aria-current="page">Results</a></nav>
+</header>
+<main>
+  <section class="panel">
+    <h2>Results</h2>
+    <div class="facts" id="summary">
+      <div><b id="sGames">—</b><span>Games played</span></div>
+      <div><b id="sPaid">—</b><span>Paid to winners</span></div>
+      <div><b id="sBest">—</b><span>Biggest win</span></div>
+      <div><b id="sLongest">—</b><span>Longest game</span></div>
+    </div>
+    <p class="muted" id="status" role="status">Loading games from the chain…</p>
+  </section>
+  <div class="history" id="games"></div>
+  <button class="secondary" id="older" hidden>Show older games</button>
+</main>
+<script type="module" src="/history.mjs"></script>
+</body>
+</html>
