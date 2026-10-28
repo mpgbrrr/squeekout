@@ -115,6 +115,10 @@ export function createWallet({ chain, onChange }) {
           chainId: hex, chainName: chain.name, nativeCurrency: chain.nativeCurrency,
           rpcUrls: chain.rpcUrls.default.http, blockExplorerUrls: chain.blockExplorers ? [chain.blockExplorers.default.url] : [],
         }] });
+        // Some wallets switch to a chain when they add it; others need asking again.
+        if (Number(await p.request({ method: "eth_chainId" })) !== chain.id) {
+          await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
+        }
       }
       chainId = Number(await p.request({ method: "eth_chainId" }));
       if (chainId !== chain.id) throw Object.assign(new Error(`Switch your wallet to ${chain.name}.`), { code: "WRONG_CHAIN" });

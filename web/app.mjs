@@ -577,6 +577,7 @@ const conn = createWallet({
     $("connect").hidden = !!address;
     $("disconnect").hidden = !address;
     $("switchNet").hidden = !wrongChain;
+    if (!wrongChain && /wrong network/.test($("msg").textContent)) msg("");
     $("faucet").hidden = !(TEST_TOKEN && address);
     if (changed) {
       unclaimedCheckedAt = 0;
