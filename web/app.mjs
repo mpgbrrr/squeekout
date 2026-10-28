@@ -12,16 +12,22 @@ const erc20 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
+  "function symbol() view returns (string)",
+  "function MAX_MINT() view returns (uint256)", // only on TestSQK, the free-mint test token
+  "function mint(address,uint256)",
 ]);
 const GAME = cfg.gameAddress;
 const chain = cfg.chainId === hardhat.id ? hardhat : sepolia;
 const pub = createPublicClient({ chain, transport: http(cfg.rpcUrl) });
 const SQK = await pub.readContract({ address: GAME, abi, functionName: "sqk" });
+const SYMBOL = await pub.readContract({ address: SQK, abi: erc20, functionName: "symbol" }).catch(() => "SQK");
+const TEST_TOKEN = await pub.readContract({ address: SQK, abi: erc20, functionName: "MAX_MINT" }).then(() => true, () => false);
+const FAUCET = 1000n * 10n ** 18n;
 const Status = ["None", "Lobby", "Live", "Ended", "Settled", "Voided", "RolledOver"];
 
 let wallet = null, me = null, game = null;
 let demo = null; // a practice game in progress takes over the cam and the game card
-const sqk = (v) => `${Number(formatUnits(v, 18)).toLocaleString("en-US", { maximumFractionDigits: 2 })} SQK`;
+const sqk = (v) => `${Number(formatUnits(v, 18)).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${SYMBOL}`;
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -236,6 +242,7 @@ function render() {
   const inLobby = mine && lobby && !mine.entry.left && !Number(mine.entry.exitTime);
   const btn = $("mainAction");
   $("leave").hidden = !inLobby;
+  $("faucet").hidden = !(TEST_TOKEN && me);
   $("finalize").hidden = status !== "Ended";
   btn.disabled = false;
   if (!me) { btn.textContent = "Connect to play"; btn.onclick = connect; $("youStatus").textContent = "Connect your wallet to play."; return; }
@@ -385,6 +392,7 @@ async function connect() {
   try { await wallet.switchChain({ id: chain.id }); } catch { msg("Switch your wallet to the Sepolia test network.", true); }
   $("account").textContent = short(me);
   $("connect").hidden = true;
+  $("faucet").hidden = !TEST_TOKEN;
   await loadGame();
 }
 
@@ -409,7 +417,10 @@ async function enter(g) {
     pub.readContract({ address: SQK, abi: erc20, functionName: "balanceOf", args: [me] }),
     pub.readContract({ address: SQK, abi: erc20, functionName: "allowance", args: [me, GAME] }),
   ]);
-  if (bal < g.p.buyIn) { msg(`You need ${sqk(g.p.buyIn)} on Sepolia; you have ${sqk(bal)}.`, true); return; }
+  if (bal < g.p.buyIn) {
+    msg(`You need ${sqk(g.p.buyIn)} on Sepolia; you have ${sqk(bal)}.${TEST_TOKEN ? ` Use "Get ${sqk(FAUCET)}" first.` : ""}`, true);
+    return;
+  }
   if (allowance < g.p.buyIn) await tx("approve", [GAME, g.p.buyIn], SQK, erc20);
   await tx("enter", [g.id]);
 }
@@ -422,6 +433,8 @@ function msg(text, error = false) {
 $("connect").onclick = connect;
 $("leave").onclick = () => tx("leaveLobby", [game.id]);
 $("finalize").onclick = () => tx("finalize", [game.id]);
+$("faucet").textContent = `Get ${sqk(FAUCET)} (free test token)`;
+$("faucet").onclick = () => tx("mint", [me, FAUCET], SQK, erc20);
 
 // ---------------------------------------------------------------- watcher log
 

@@ -79,6 +79,19 @@ GAME=<game> npx hardhat run scripts/e2e/report.js --network localhost         # 
    - Generate a public domain: that URL is the web app.
 4. **Games open themselves.** Deploying saves the default rules (buy-in, bounty, minimum players, 5-minute minimum lobby), and the watcher opens the first game as soon as it starts, then a new one whenever a game finishes. To open an extra game by hand: `DEPLOYER_PRIVATE_KEY=<deployer key> EARLIEST_START=5 npm run game:sepolia`. Squeektoshi usually runs between about 21:00 and 06:00 UTC.
 
+### Playing with a free test token
+
+Without real SQK, deploy a game that takes **tSQK** instead: `contracts/TestSQK.sol`, a token anyone can mint (up to 10,000 per call). It has no value and isn't SQK. Everything else is real: the hamster feed, the watcher and the settled-round check.
+
+```sh
+npx hardhat run scripts/deploy-test-token.js --network sepolia
+SQK_ADDRESS=<tSQK address> RECORD=sepolia-tsqk WATCHER_ADDRESS=<watcher address> npm run deploy:sepolia
+```
+
+Point the watcher's `GAME_ADDRESS` at that game. The web app spots the test token and shows a **Get 1,000 tSQK** button to connected players. The current one is in `deployments/sepolia-tsqk.json` (game `0x6F170b3CBF48fe6444e4d7b75812b30F33fCc7cC`, tSQK `0xD70d7248F309F3E33695b8582A2fE92DD8eDF233`); the real-SQK game in `deployments/sepolia.json` is still deployed.
+
+If a deploy fails with "insufficient funds", set `SEPOLIA_GAS_PRICE` (in wei, e.g. `50000000`): Sepolia's fees are tiny, but the default 1 gwei tip makes Hardhat ask for more ETH than a test wallet holds.
+
 ### Squeekchain contracts
 
 | Contract | Sepolia address |

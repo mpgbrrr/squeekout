@@ -4,6 +4,7 @@
 //   SQK_ADDRESS           optional; defaults to the SQK of Squeekchain's 26 Oct 2026 Sepolia deployment
 //   SQUEEK_CORE           optional; the SqueekCore that the settled-round check reads (set "off" to skip)
 //   BUY_IN, BOUNTY        default game settings in SQK (100 and 5); MIN_PLAYERS (2); MIN_LOBBY seconds (300)
+//   RECORD                optional name of the record in deployments/ (default: the network name)
 // Usage: npx hardhat run scripts/deploy.js --network sepolia
 const fs = require("node:fs");
 const path = require("node:path");
@@ -49,7 +50,7 @@ async function main() {
     roundCheckCore: core === "off" ? null : core,
     owner: deployer.address, deployTx: receipt.hash, block: receipt.blockNumber, deployedAt: new Date().toISOString(),
   };
-  const out = path.join(__dirname, "..", "deployments", `${network.name}.json`);
+  const out = path.join(__dirname, "..", "deployments", `${env.RECORD || network.name}.json`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(record, null, 2) + "\n");
   console.log(JSON.stringify(record, null, 2));
