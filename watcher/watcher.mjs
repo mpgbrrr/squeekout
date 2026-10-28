@@ -19,6 +19,7 @@ import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { hardhat, sepolia } from "viem/chains";
 import { newGameState, readingFromStatus, step } from "../shared/rules.js";
+import { createBots, isTestToken } from "./bots.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const env = process.env;
@@ -38,6 +39,25 @@ const account = privateKeyToAccount(env.WATCHER_PRIVATE_KEY);
 const pub = createPublicClient({ chain, transport: http(RPC) });
 const wallet = createWalletClient({ account, chain, transport: http(RPC) });
 const Status = ["None", "Lobby", "Live", "Ended", "Settled", "Voided", "RolledOver"];
+
+// Test players (BOTS, default 5; 0 turns them off). Only for games played with the free test token.
+let bots = null;
+try {
+  const sqk = await pub.readContract({ address: GAME, abi, functionName: "sqk" });
+  const count = Number(env.BOTS ?? 5);
+  if (count > 0 && (await isTestToken(pub, sqk))) {
+    bots = createBots({
+      count, seedKey: env.WATCHER_PRIVATE_KEY, pub, chain, rpc: RPC, game: GAME, abi, sqk, log: (...a) => log(...a),
+      fund: async (to, value) => {
+        const hash = await wallet.sendTransaction({ to, value });
+        await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
+        return hash;
+      },
+    });
+  }
+} catch (e) {
+  console.error("Test players are off: couldn't read the game's token", e);
+}
 
 // ---------------------------------------------------------------- public log
 
@@ -115,11 +135,13 @@ async function pollFeed() {
 
 // ---------------------------------------------------------------- chain
 
+const chainGames = new Map(); // id -> { status, p, startTime }, refreshed with every chain round
 async function refreshGames() {
   const count = Number(await pub.readContract({ address: GAME, abi, functionName: "gameCount" }));
   for (let id = 1; id <= count; id++) {
     const g = await pub.readContract({ address: GAME, abi, functionName: "getGame", args: [BigInt(id)] });
     const status = Status[Number(g.status)];
+    chainGames.set(id, { status, p: g.p, startTime: Number(g.startTime) });
     const key = String(id);
     if (status === "Lobby" || status === "Live" || status === "Ended") {
       if (!saved.games[key]) {
@@ -210,6 +232,10 @@ async function tick() {
       game.queue.push(decision);
       log("decided", { game: Number(id), ...decision });
     }
+    if (bots && game.status === "Live" && game.rules.phase === "live") {
+      bots.onSecond(Number(id), game.rules, latest, chainGames.get(Number(id))?.startTime ?? game.rules.startTime, now)
+        .catch((e) => log("bot_error", { error: String(e.shortMessage || e.message || e) }));
+    }
   }
   persist();
 }
@@ -224,6 +250,7 @@ async function chainWork() {
       if (game.status === "Ended" && !game.queue.length) await tryFinalize(id);
     }
     await openNextIfIdle();
+    if (bots) await bots.chainWork(Math.max(0, ...chainGames.keys()), chainGames);
     persist();
   } catch (e) {
     log("chain_error", { error: String(e.shortMessage || e.message || e) });
@@ -243,7 +270,7 @@ createServer((req, res) => {
   }
   if (url.pathname === "/config.json") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-    return res.end(JSON.stringify({ gameAddress: GAME, chainId: chain.id, rpcUrl: RPC, squeekApi: API, watcher: account.address }));
+    return res.end(JSON.stringify({ gameAddress: GAME, chainId: chain.id, rpcUrl: RPC, squeekApi: API, watcher: account.address, bots: bots?.list() ?? [] }));
   }
   const rel = url.pathname === "/" ? "/web/index.html" : url.pathname.startsWith("/shared/") ? url.pathname : `/web${url.pathname}`;
   const file = normalize(join(ROOT, rel));
@@ -260,7 +287,7 @@ createServer((req, res) => {
     res.writeHead(404);
     res.end("Not found");
   }
-}).listen(PORT, () => log("started", { port: PORT, game: GAME, watcher: account.address }));
+}).listen(PORT, () => log("started", { port: PORT, game: GAME, watcher: account.address, bots: bots?.list() ?? [] }));
 
 setInterval(tick, 1000);
 setInterval(chainWork, 15_000);

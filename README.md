@@ -88,7 +88,7 @@ npx hardhat run scripts/deploy-test-token.js --network sepolia
 SQK_ADDRESS=<tSQK address> RECORD=sepolia-tsqk WATCHER_ADDRESS=<watcher address> npm run deploy:sepolia
 ```
 
-Point the watcher's `GAME_ADDRESS` at that game. The web app spots the test token and shows a **Get 1,000 tSQK** button to connected players. The current one is in `deployments/sepolia-tsqk.json` (game `0x6F170b3CBF48fe6444e4d7b75812b30F33fCc7cC`, tSQK `0xD70d7248F309F3E33695b8582A2fE92DD8eDF233`); the real-SQK game in `deployments/sepolia.json` is still deployed.
+Point the watcher's `GAME_ADDRESS` at that game. The web app spots the test token and shows a **Get 1,000 tSQK** button to connected players. The watcher also runs 5 **test players** (`watcher/bots.mjs`; set `BOTS` to change how many, `0` for none): each has its own wallet derived from the watcher's key, mints its own tSQK, joins every game at a random moment in the lobby, gets off at a random moment (greedy, steady or jumpy, like the demo) and claims what it's owed. The watcher tops up their gas with 0.002 ETH when they run low. They never play with real SQK. The current one is in `deployments/sepolia-tsqk.json` (game `0x6F170b3CBF48fe6444e4d7b75812b30F33fCc7cC`, tSQK `0xD70d7248F309F3E33695b8582A2fE92DD8eDF233`); the real-SQK game in `deployments/sepolia.json` is still deployed.
 
 If a deploy fails with "insufficient funds", set `SEPOLIA_GAS_PRICE` (in wei, e.g. `50000000`): Sepolia's fees are tiny, but the default 1 gwei tip makes Hardhat ask for more ETH than a test wallet holds.
 

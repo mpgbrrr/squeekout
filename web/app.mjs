@@ -29,6 +29,9 @@ let wallet = null, me = null, game = null;
 let demo = null; // a practice game in progress takes over the cam and the game card
 const sqk = (v) => `${Number(formatUnits(v, 18)).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${SYMBOL}`;
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+// Test players run by the watcher show by name (with a robot), everyone else by address.
+const BOTS = new Map((cfg.bots || []).map((b) => [b.address.toLowerCase(), b.name]));
+const playerName = (a) => (BOTS.has(a.toLowerCase()) ? `🤖 ${BOTS.get(a.toLowerCase())}` : short(a));
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
@@ -215,11 +218,11 @@ function render() {
     const off = e.left ? "left the lobby" : late(e) ? "joined after the start (refunded)" : leftEarly(e) ? "left before the start (refunded)"
       : Number(e.exitTime) ? (start ? `+${mmss(Math.max(0, Number(e.exitTime) - start))}` : clock(Number(e.exitTime))) : "still on";
     const pay = e.claimed ? "claimed" : p.claimable > 0n ? sqk(p.claimable) : settled ? "caught" : "—";
-    return `<tr><td>${short(p.addr)}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
+    return `<tr><td>${playerName(p.addr)}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="muted">No players yet.</td></tr>`;
 
   // On-cam overlay: players still on, and the latest events.
-  const who = (p) => (me && p.addr.toLowerCase() === me.toLowerCase() ? "You" : short(p.addr));
+  const who = (p) => (me && p.addr.toLowerCase() === me.toLowerCase() ? "You" : playerName(p.addr));
   const stillOn = g.players.filter((p) => !p.entry.left && !late(p.entry) && !leftEarly(p.entry) && !Number(p.entry.exitTime)).length;
   const lastMove = Number(g.lastMove);
   const caught = g.players.filter((p) => !p.entry.left && !late(p.entry) && !leftEarly(p.entry)
