@@ -43,8 +43,15 @@
   <div class="banner" id="demoBanner" hidden>Demo game: a simulated Squeektoshi and simulated players. No wallet, no SQK, nothing on-chain. Same rules and payout maths as the real game.</div>
   <section class="top">
     <div class="panel">
-      <h2>Squeektoshi cam</h2>
-      <div class="camwrap">
+      <div class="cam-head">
+        <h2>Squeektoshi cam</h2>
+        <span class="view-toggle" role="group" aria-label="Cam view">
+          <button class="secondary" data-view="cartoon" aria-pressed="true">Cartoon</button>
+          <button class="secondary" data-view="live" aria-pressed="false">Live stream</button>
+        </span>
+      </div>
+      <div class="camwrap" id="camwrap">
+        <div class="livewrap" id="liveWrap" hidden></div>
         <canvas id="cam" aria-label="Animated hamster showing whether Squeektoshi is running"></canvas>
         <div class="hud-count" id="hudCount" hidden><b><span id="hudOn">0</span><small id="hudOf"></small></b><span id="hudLbl">still on</span></div>
         <ol class="hud-feed" id="hudFeed" aria-live="polite" aria-label="Latest game events" hidden></ol>

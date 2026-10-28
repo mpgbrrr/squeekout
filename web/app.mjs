@@ -11,6 +11,8 @@ import { createNames, escapeHtml, short } from "/names.mjs";
 import { createWallet, installedWallets, walletErrorText } from "/wallet.mjs";
 
 const $ = (id) => document.getElementById(id);
+// Browser storage that never throws (private windows, blocked storage).
+const store = (kind, key, value) => { try { return value === undefined ? window[kind].getItem(key) : window[kind].setItem(key, value); } catch { return null; } };
 const cfg = await (await fetch("/config.json")).json();
 const abi = await (await fetch("/abi.json")).json();
 const erc20 = parseAbi([
@@ -183,6 +185,54 @@ try {
 }
 setInterval(pollFeed, 2000);
 pollFeed();
+
+// ---------------------------------------------------------------- livestream
+
+// The real Squeektoshi on X, instead of the cartoon. The player loads only when someone picks it. The
+// broadcast is the one the watcher is configured with, or the live one Squeekchain's API reports, if any.
+let broadcastId = cfg.streamBroadcastId || null;
+const LIVE_HELP = `The cartoon follows Squeekchain's live wheel data. Watch the real hamster at <a href="https://squeekchain.com" target="_blank" rel="noopener">squeekchain.com</a>.`;
+const STREAM_HELP = "Live from Squeekchain's stream on X. The status and clocks follow Squeekchain's wheel data, which is what the game runs on.";
+let camView = store("localStorage", "camView") === "live" ? "live" : "cartoon";
+
+async function refreshBroadcast() {
+  try {
+    const res = await fetch(`${cfg.squeekApi}/v1/stream/current`, { cache: "no-store" });
+    if (!res.ok) return;
+    const s = await res.json();
+    if (s.state === "running" && /^[A-Za-z0-9_-]{1,64}$/.test(s.broadcastId || "") && s.broadcastId !== broadcastId) {
+      broadcastId = s.broadcastId;
+      if (camView === "live") setCamView("live");
+    }
+  } catch {
+    // keep the configured broadcast
+  }
+}
+
+function setCamView(view) {
+  if (demo) view = "cartoon"; // the demo plays on the cartoon
+  camView = view;
+  const live = view === "live", wrap = $("liveWrap");
+  $("camwrap").classList.toggle("live", live);
+  wrap.hidden = !live;
+  for (const b of document.querySelectorAll(".view-toggle button")) b.setAttribute("aria-pressed", String(b.dataset.view === view));
+  if (!demo) $("modeHelp").innerHTML = live ? STREAM_HELP : LIVE_HELP;
+  if (!live) { wrap.replaceChildren(); return; } // stop the player when hidden
+  const src = broadcastId ? `https://studio.x.com/embed/broadcast/${broadcastId}` : null;
+  if (wrap.firstElementChild?.src === src) return;
+  if (!src) { wrap.innerHTML = "<p>The livestream isn't available right now.</p>"; return; }
+  const frame = Object.assign(document.createElement("iframe"), {
+    src, title: "Squeektoshi live on X", allow: "autoplay; fullscreen; picture-in-picture", allowFullscreen: true, referrerPolicy: "strict-origin-when-cross-origin",
+  });
+  wrap.replaceChildren(frame);
+}
+
+for (const b of document.querySelectorAll(".view-toggle button")) {
+  b.onclick = () => { setCamView(b.dataset.view); if (!demo) store("localStorage", "camView", b.dataset.view); };
+}
+setCamView(camView);
+refreshBroadcast();
+setInterval(refreshBroadcast, 120_000);
 
 // ---------------------------------------------------------------- game state
 
@@ -429,7 +479,6 @@ function celebrateDemo() {
 
 let demoSpeed = 5, demoTimer = null, demoRun = null, demoCelebrated = false;
 const demoMoments = createMoments();
-const LIVE_HELP = `The cartoon follows Squeekchain's live wheel data. Watch the real hamster at <a href="https://squeekchain.com" target="_blank" rel="noopener">squeekchain.com</a>.`;
 const demoSqk = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} SQK`;
 
 function startDemo() {
@@ -437,6 +486,7 @@ function startDemo() {
   demoRun = createRunClock();
   demoCelebrated = false;
   finale.close();
+  setCamView("cartoon");
   $("unclaimed").hidden = true;
   demoMoments.reset();
   lastFeedKey = "";
@@ -459,6 +509,7 @@ function stopDemo() {
   lastFeedKey = "";
   finale.close();
   unclaimedCheckedAt = 0;
+  setCamView(store("localStorage", "camView") === "live" ? "live" : "cartoon");
   $("demoBanner").hidden = true;
   $("speed").hidden = true;
   $("demoToggle").textContent = "Play a demo game";
@@ -557,7 +608,6 @@ function showBetaNotice() {
     if (!d.open) { d.returnValue = ""; d.showModal(); }
   });
 }
-const store = (kind, key, value) => { try { return value === undefined ? window[kind].getItem(key) : window[kind].setItem(key, value); } catch { return null; } };
 $("betaMore").onclick = () => showBetaNotice();
 if (!store("localStorage", "betaNoticeSeen")) {
   showBetaNotice().then((ok) => {

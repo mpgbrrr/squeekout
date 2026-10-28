@@ -80,7 +80,7 @@ GAME=<game> npx hardhat run scripts/e2e/second-game.js --network localhost    # 
    This writes `deployments/sepolia.json`; commit it. It uses Squeekchain's current Sepolia contracts (below) and switches the settled-round check on. Override with `SQK_ADDRESS` and `SQUEEK_CORE` (`SQUEEK_CORE=off` skips the check).
 3. **Run the watcher** on an always-on host. The repo's `Dockerfile` builds it. On Railway:
    - New project → Deploy from GitHub repo → this repo.
-   - Variables: `GAME_ADDRESS`, `WATCHER_PRIVATE_KEY`, and optionally `RPC_URL` (a dedicated Sepolia RPC is more reliable than the public default).
+   - Variables: `GAME_ADDRESS`, `WATCHER_PRIVATE_KEY`, and optionally `RPC_URL` (a dedicated Sepolia RPC is more reliable than the public default) and `STREAM_BROADCAST_ID` (the X broadcast the cam's "Live stream" view shows, from `x.com/i/broadcasts/<id>`; change it when the stream restarts).
    - Add a **volume** mounted at `/data`, so the watcher's game state survives restarts. Without it, a restart during a live game voids that game.
    - Generate a public domain: that URL is the web app.
 4. **Games open themselves.** Deploying saves the default rules (buy-in, bounty, minimum players, 5-minute minimum lobby), and the watcher opens the first game as soon as it starts, then a new one whenever a game finishes. To open an extra game by hand: `DEPLOYER_PRIVATE_KEY=<deployer key> EARLIEST_START=5 npm run game:sepolia`. Squeektoshi usually runs between about 21:00 and 06:00 UTC.
