@@ -1,6 +1,6 @@
 // Squeekchain Chicken web app: the hamster cam, the current game, and the player's actions.
 import { createPublicClient, createWalletClient, custom, http, formatUnits, parseAbi } from "https://esm.sh/viem@2.21.55";
-import { hardhat, sepolia } from "https://esm.sh/viem@2.21.55/chains";
+import { hardhat, mainnet, sepolia } from "https://esm.sh/viem@2.21.55/chains";
 import { display, newGameState, readingFromStatus, step } from "/shared/rules.js";
 import { createHamster } from "/hamster.mjs";
 import { createDemo } from "/demo.mjs";
@@ -30,9 +30,23 @@ let wallet = null, me = null, game = null;
 let demo = null; // a practice game in progress takes over the cam and the game card
 const sqk = (v) => `${Number(formatUnits(v, 18)).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${SYMBOL}`;
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-// Test players run by the watcher show by name (with a robot), everyone else by address.
+const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// Players show by their ENS name when their address has one (looked up on Ethereum mainnet, where ENS
+// names live, and checked both ways by viem), otherwise by short address. Test players run by the
+// watcher show by name with a robot.
+const ens = createPublicClient({ chain: mainnet, transport: http("https://ethereum-rpc.publicnode.com") });
+const ensNames = new Map(); // lowercase address -> name, or null while looking up / when there is none
+function ensName(a) {
+  const k = a.toLowerCase();
+  if (!ensNames.has(k)) {
+    ensNames.set(k, null);
+    ens.getEnsName({ address: a }).then((name) => name && ensNames.set(k, name)).catch(() => {});
+  }
+  return ensNames.get(k);
+}
 const BOTS = new Map((cfg.bots || []).map((b) => [b.address.toLowerCase(), b.name]));
-const playerName = (a) => (BOTS.has(a.toLowerCase()) ? `🤖 ${BOTS.get(a.toLowerCase())}` : short(a));
+const playerName = (a) => (BOTS.has(a.toLowerCase()) ? `🤖 ${BOTS.get(a.toLowerCase())}` : ensName(a) ?? short(a));
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
@@ -183,7 +197,9 @@ async function loadGame() {
   } catch {
     results = await Promise.all(calls.map((c) => pub.readContract(c))); // chains without Multicall3
   }
-  game = { id, ...g, players: players.map((p, i) => ({ addr: p, entry: results[2 * i], claimable: results[2 * i + 1] })) };
+  // The entries getter returns a plain list; name its fields.
+  const entry = ([entered, left, claimed, enteredAt, exitTime]) => ({ entered, left, claimed, enteredAt, exitTime });
+  game = { id, ...g, players: players.map((p, i) => ({ addr: p, entry: entry(results[2 * i]), claimable: results[2 * i + 1] })) };
   if (rules.earliestStart !== Number(g.p.earliestStart)) rules = { ...rules, earliestStart: Number(g.p.earliestStart) };
   render();
 }
@@ -219,7 +235,7 @@ function render() {
     const off = e.left ? "left the lobby" : late(e) ? "joined after the start (refunded)" : leftEarly(e) ? "left before the start (refunded)"
       : Number(e.exitTime) ? (start ? `+${mmss(Math.max(0, Number(e.exitTime) - start))}` : clock(Number(e.exitTime))) : "still on";
     const pay = e.claimed ? "claimed" : p.claimable > 0n ? sqk(p.claimable) : settled ? "caught" : "—";
-    return `<tr><td>${playerName(p.addr)}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
+    return `<tr><td>${escapeHtml(playerName(p.addr))}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="muted">No players yet.</td></tr>`;
 
   // On-cam overlay: players still on, and the latest events.
@@ -419,6 +435,7 @@ async function connect() {
   [me] = await wallet.requestAddresses();
   try { await wallet.switchChain({ id: chain.id }); } catch { msg("Switch your wallet to the Sepolia test network.", true); }
   $("account").textContent = short(me);
+  ens.getEnsName({ address: me }).then((name) => name && ($("account").textContent = name)).catch(() => {});
   $("connect").hidden = true;
   $("faucet").hidden = !TEST_TOKEN;
   await loadGame();
