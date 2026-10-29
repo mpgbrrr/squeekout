@@ -1,6 +1,6 @@
 # Squeek Out
 
-**Ride the wheel. Bail before he stops.** A testnet game of nerve on [Squeekchain](https://docs.squeekchain.com/), the blockchain powered by Squeektoshi the hamster running on his wheel.
+**Ride the wheel. Bail before he stops.** Play at **[squeekout.fun](https://squeekout.fun)**: a testnet game of nerve on [Squeekchain](https://docs.squeekchain.com/), the blockchain powered by Squeektoshi the hamster running on his wheel.
 
 (The repository, the contract `SqueekChicken` and some internal names keep the game's working title, Squeekchain Chicken.)
 
@@ -84,7 +84,7 @@ GAME=<game> npx hardhat run scripts/e2e/second-game.js --network localhost    # 
    - New project → Deploy from GitHub repo → this repo.
    - Variables: `GAME_ADDRESS`, `WATCHER_PRIVATE_KEY`, and optionally `RPC_URL` (a dedicated Sepolia RPC is more reliable than the public default) and `STREAM_BROADCAST_ID` (the X broadcast the cam's "Live stream" view shows, from `x.com/i/broadcasts/<id>`; change it when the stream restarts).
    - Add a **volume** mounted at `/data`, so the watcher's game state survives restarts. Without it, a restart during a live game voids that game.
-   - Generate a public domain: that URL is the web app.
+   - Generate a public domain: that URL is the web app. The live game also has a custom domain, `squeekout.fun` (Settings → Networking → Custom Domain in Railway, with an ALIAS record at the registrar, Name.com). Link previews use whichever address the visitor came in on.
 4. **Games open themselves.** Deploying saves the default rules (buy-in, bounty, minimum players, 5-minute minimum lobby), and the watcher opens the first game as soon as it starts, then a new one whenever a game finishes. To open an extra game by hand: `DEPLOYER_PRIVATE_KEY=<deployer key> EARLIEST_START=5 npm run game:sepolia`. Squeektoshi usually runs between about 21:00 and 06:00 UTC.
 
 ### Playing with a free test token
