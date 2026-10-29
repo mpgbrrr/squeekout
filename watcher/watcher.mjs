@@ -244,6 +244,23 @@ async function openNextIfIdle() {
 // After a redeploy, a lobby left open on an earlier contract would wait 7 days for its backstop. Void it, so
 // everyone in it can claim their buy-in back right away. Live or ended games there are left alone.
 const retired = new Set();
+// Game layouts of earlier contract versions, newest first: the first contracts (to 29 Oct 2026) had a
+// curveStep in Params. A layout fits when it decodes to a known status.
+const p = (extra) => ({ type: "tuple", name: "p", components: [
+  { name: "buyIn", type: "uint128" }, { name: "earliestStart", type: "uint64" }, { name: "idleWindow", type: "uint32" },
+  { name: "grace", type: "uint32" }, ...extra, { name: "jackpotBps", type: "uint16" }, { name: "jackpotGroupBps", type: "uint16" },
+  { name: "bountyFlat", type: "uint128" }, { name: "minPlayers", type: "uint16" }, { name: "maxPlayers", type: "uint16" }] });
+const OLD_GET_GAME = [{ type: "function", name: "getGame", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "tuple", components: [
+  p([{ name: "curveStep", type: "uint32" }]), { name: "status", type: "uint8" }, { name: "startTime", type: "uint64" }, { name: "lastMove", type: "uint64" },
+  { name: "endCounter", type: "uint64" }, { name: "entrants", type: "uint32" }, { name: "rolloverIn", type: "uint256" }, { name: "curvePool", type: "uint256" },
+  { name: "sumWeights", type: "uint256" }, { name: "jackpotEach", type: "uint256" }, { name: "jackpotFromTime", type: "uint64" }] }] }];
+async function previousGameStatus(address, id) {
+  for (const layout of [abi, OLD_GET_GAME]) {
+    const g = await pub.readContract({ address, abi: layout, functionName: "getGame", args: [id] }).catch(() => null);
+    if (g && Status[Number(g.status)]) return Status[Number(g.status)];
+  }
+  return null;
+}
 async function retirePreviousLobbies() {
   for (const address of PREVIOUS_GAMES) {
     if (retired.has(address)) continue;
@@ -253,14 +270,14 @@ async function retirePreviousLobbies() {
         pub.readContract({ address, abi, functionName: "watcher" }),
       ]);
       if (theirWatcher.toLowerCase() !== account.address.toLowerCase()) { retired.add(address); continue; }
-      const g = count > 0n ? await pub.readContract({ address, abi, functionName: "getGame", args: [count] }) : null;
-      if (g && Status[Number(g.status)] === "Lobby") {
+      const status = count > 0n ? await previousGameStatus(address, count) : null;
+      if (status === "Lobby") {
         const { request } = await pub.simulateContract({ account, address, abi, functionName: "voidGame", args: [count, "moved to a new game contract"] });
         const hash = await wallet.writeContract(request);
         await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
         log("previous_lobby_voided", { contract: address, game: Number(count), tx: hash });
       }
-      if (!g || ["Settled", "Voided", "RolledOver", "Lobby"].includes(Status[Number(g.status)])) retired.add(address);
+      if (!status || ["Settled", "Voided", "RolledOver", "Lobby"].includes(status)) retired.add(address);
     } catch (e) {
       log("previous_contract_retry", { contract: address, error: String(e.shortMessage || e.message || e) });
     }
