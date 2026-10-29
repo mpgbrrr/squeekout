@@ -189,25 +189,11 @@ pollFeed();
 // ---------------------------------------------------------------- livestream
 
 // The real Squeektoshi on X, instead of the cartoon. The player loads only when someone picks it. The
-// broadcast is the one the watcher is configured with, or the live one Squeekchain's API reports, if any.
-let broadcastId = cfg.streamBroadcastId || null;
+// broadcast is the one the watcher is configured with (STREAM_BROADCAST_ID).
+const broadcastId = cfg.streamBroadcastId || null;
 const LIVE_HELP = `The cartoon follows Squeekchain's live wheel data. Watch the real hamster at <a href="https://squeekchain.com" target="_blank" rel="noopener">squeekchain.com</a>.`;
 const STREAM_HELP = "Live from Squeekchain's stream on X. The status and clocks follow Squeekchain's wheel data, which is what the game runs on.";
 let camView = store("localStorage", "camView") === "live" ? "live" : "cartoon";
-
-async function refreshBroadcast() {
-  try {
-    const res = await fetch(`${cfg.squeekApi}/v1/stream/current`, { cache: "no-store" });
-    if (!res.ok) return;
-    const s = await res.json();
-    if (s.state === "running" && /^[A-Za-z0-9_-]{1,64}$/.test(s.broadcastId || "") && s.broadcastId !== broadcastId) {
-      broadcastId = s.broadcastId;
-      if (camView === "live") setCamView("live");
-    }
-  } catch {
-    // keep the configured broadcast
-  }
-}
 
 function setCamView(view) {
   if (demo) view = "cartoon"; // the demo plays on the cartoon
@@ -231,8 +217,6 @@ for (const b of document.querySelectorAll(".view-toggle button")) {
   b.onclick = () => { setCamView(b.dataset.view); if (!demo) store("localStorage", "camView", b.dataset.view); };
 }
 setCamView(camView);
-refreshBroadcast();
-setInterval(refreshBroadcast, 120_000);
 
 // ---------------------------------------------------------------- game state
 
