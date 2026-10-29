@@ -6,6 +6,7 @@ RUN npm ci --omit=dev
 COPY shared ./shared
 COPY watcher ./watcher
 COPY web ./web
+COPY deployments ./deployments
 ENV NODE_ENV=production PORT=3000 STATE_FILE=/data/state.json
 EXPOSE 3000
 CMD ["node", "watcher/watcher.mjs"]

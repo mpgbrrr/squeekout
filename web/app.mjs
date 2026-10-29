@@ -385,21 +385,30 @@ $("finale").addEventListener("close", () => { finaleGame = null; });
 
 // Winnings and refunds still waiting in recent games (the game card only shows the current one).
 let unclaimedCheckedAt = 0;
+// Earlier game contracts (after a redeploy) where players may still have refunds or winnings.
+const PREVIOUS_GAMES = (cfg.previousGames || []).filter((a) => /^0x[0-9a-fA-F]{40}$/.test(a));
+
 async function updateUnclaimed(currentId) {
   if (!me || demo || Date.now() - unclaimedCheckedAt < 20_000) return;
   unclaimedCheckedAt = Date.now();
-  const ids = [];
-  for (let id = currentId - 1n; id >= 1n && ids.length < 10; id--) ids.push(id);
-  const calls = ids.map((id) => ({ address: GAME, abi, functionName: "claimable", args: [id, me] }));
+  // This contract's last 10 games before the current one, and each previous contract's last 10 games.
+  const spots = [];
+  for (let id = currentId - 1n; id >= 1n && spots.length < 10; id--) spots.push({ address: GAME, id });
+  for (const address of PREVIOUS_GAMES) {
+    const count = await pub.readContract({ address, abi, functionName: "gameCount" }).catch(() => 0n);
+    for (let id = count; id >= 1n && id > count - 10n; id--) spots.push({ address, id, previous: true });
+  }
+  const calls = spots.map(({ address, id }) => ({ address, abi, functionName: "claimable", args: [id, me] }));
   let owed = [];
-  try { owed = await pub.multicall({ contracts: calls, allowFailure: false }); } catch { owed = await Promise.all(calls.map((c) => pub.readContract(c))); }
+  try { owed = await pub.multicall({ contracts: calls, allowFailure: false }); } catch { owed = await Promise.all(calls.map((c) => pub.readContract(c).catch(() => 0n))); }
   const box = $("unclaimed");
-  const items = ids.map((id, i) => ({ id, owed: owed[i] })).filter((x) => x.owed > 0n);
+  const items = spots.map((x, i) => ({ ...x, owed: owed[i] })).filter((x) => x.owed > 0n);
   box.hidden = !items.length;
   box.replaceChildren(...(items.length ? [Object.assign(document.createElement("p"), { textContent: "You have winnings to claim" })] : []),
-    ...items.map(({ id, owed: amt }) => {
-      const b = Object.assign(document.createElement("button"), { className: "secondary", textContent: `Claim ${sqk(amt)} from game #${id}` });
-      b.onclick = async () => { b.disabled = true; try { await tx("claim", [id]); } finally { unclaimedCheckedAt = 0; await updateUnclaimed(currentId); } };
+    ...items.map(({ address, id, previous, owed: amt }) => {
+      const b = Object.assign(document.createElement("button"), { className: "secondary",
+        textContent: `Claim ${sqk(amt)} from game #${id}${previous ? " (previous contract)" : ""}` });
+      b.onclick = async () => { b.disabled = true; try { await tx("claim", [id], address); } finally { unclaimedCheckedAt = 0; await updateUnclaimed(currentId); } };
       return b;
     }));
 }

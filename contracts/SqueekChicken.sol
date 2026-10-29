@@ -12,7 +12,7 @@ import {ISqueekCore} from "./ISqueekCore.sol";
 /// @notice A game of chicken on Squeektoshi's wheel. Players buy in with SQK while the lobby is open; the
 /// lobby closes when the hamster starts running. Once he runs, players exit whenever they like. The game
 /// ends at his last movement once the wheel has been still for `idleWindow` seconds. Anyone still in, or
-/// who exited too late, is caught. Winners split the pot by how long they stayed in, and the last 10% of
+/// who exited too late, is caught. Winners split the pot in proportion to how long they stayed on, and the last 10% of
 /// winners share a jackpot. When a game finishes, the watcher opens the next one.
 /// @dev Testnet build. A watcher service reads Squeekchain's live feed and posts start, end and void
 /// decisions; it cannot move funds or choose winners. When enabled, `finalize` checks the watcher's end
@@ -35,7 +35,6 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         uint64 earliestStart; // unix seconds; the game can't start before this, so the lobby has time to fill
         uint32 idleWindow; // seconds of stillness that end the game (agreed: 180)
         uint32 grace; // seconds after the last movement an exit still wins (agreed: 12)
-        uint32 curveStep; // seconds per +25% weight (agreed: 120)
         uint16 jackpotBps; // share of the pot for the jackpot (agreed: 2000)
         uint16 jackpotGroupBps; // share of winners who split the jackpot (agreed: 1000)
         uint128 bountyFlat; // SQK paid to whoever calls finalize, capped at 1% of the pot
@@ -68,9 +67,6 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
 
     uint256 public constant BOUNTY_CAP_BPS = 100; // 1% of the pot
     uint256 public constant BACKSTOP_DELAY = 7 days;
-    uint256 public constant MAX_CURVE_STEPS = 180; // weight stops growing after 180 steps (6 h at 2-min steps)
-    uint256 internal constant ONE = 1e18;
-    uint256 internal constant GROWTH = 1.25e18;
 
     IERC20 public immutable sqk;
     address public watcher;
@@ -342,14 +338,11 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         return amount;
     }
 
-    /// @notice Weight of an exit: +25% for every `curveStep` seconds survived, interpolated within a step.
+    /// @notice Weight of an exit: the seconds the player stayed on the wheel (at least 1), so each winner's
+    /// share of the curve pool is in proportion to their time on the wheel.
     function weight(Game storage g, uint64 exitTime) internal view returns (uint256) {
         uint256 s = exitTime > g.startTime ? exitTime - g.startTime : 0;
-        uint256 steps = s / g.p.curveStep;
-        uint256 rem = s % g.p.curveStep;
-        if (steps >= MAX_CURVE_STEPS) return _rpow(GROWTH, MAX_CURVE_STEPS);
-        uint256 w = _rpow(GROWTH, steps);
-        return (w * (ONE + ((GROWTH - ONE) * rem) / g.p.curveStep)) / ONE;
+        return s == 0 ? 1 : s;
     }
 
     function weightAt(uint256 id, uint64 exitTime) external view returns (uint256) {
@@ -360,7 +353,7 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
 
     function _validate(Params memory p) internal pure {
         if (
-            p.buyIn == 0 || p.curveStep == 0 || p.idleWindow == 0 || p.jackpotBps > 10_000 || p.jackpotGroupBps > 10_000
+            p.buyIn == 0 || p.idleWindow == 0 || p.jackpotBps > 10_000 || p.jackpotGroupBps > 10_000
                 || p.minPlayers == 0 || p.maxPlayers < p.minPlayers
         ) revert BadParams();
     }
@@ -429,15 +422,5 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         uint64 before = squeekCore.roundPage(r - 1, r - 1, 0).end.cumulativeWork;
         uint64 afterRound = squeekCore.roundPage(r, r, 0).end.cumulativeWork;
         return (g.endCounter >= before && g.endCounter <= afterRound) ? int8(1) : int8(-1);
-    }
-
-    /// @dev Fixed-point power with 18 decimals, by squaring.
-    function _rpow(uint256 x, uint256 n) internal pure returns (uint256 z) {
-        z = ONE;
-        while (n > 0) {
-            if (n & 1 == 1) z = (z * x) / ONE;
-            x = (x * x) / ONE;
-            n >>= 1;
-        }
     }
 }

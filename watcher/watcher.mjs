@@ -9,11 +9,13 @@
 //   SQUEEK_API            Squeekchain API base (default https://api.squeekchain.com)
 //   STATE_FILE            where game state survives restarts (default /data/state.json; mount a volume)
 //   STREAM_BROADCAST_ID   the X broadcast of Squeektoshi the page can show (x.com/i/broadcasts/<id>)
+//   PREVIOUS_GAME_ADDRESSES  earlier game contracts (comma-separated) whose refunds and winnings players can still
+//                         claim from the page; defaults to the "previous" list in this game's deployments/ record
 //   PORT                  web server port (default 3000)
 //   CHAIN                 "sepolia" (default) or "hardhat" for a local test chain
 
 import { createServer } from "node:http";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join, extname, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPublicClient, createWalletClient, http } from "viem";
@@ -29,6 +31,18 @@ const RPC = env.RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
 const API = env.SQUEEK_API || "https://api.squeekchain.com";
 const STATE_FILE = env.STATE_FILE || "/data/state.json";
 const PORT = Number(env.PORT || 3000);
+// Earlier game contracts players may still have refunds or winnings in, so the page can offer those claims.
+function previousGames() {
+  if (env.PREVIOUS_GAME_ADDRESSES) return env.PREVIOUS_GAME_ADDRESSES.split(",").map((a) => a.trim()).filter(Boolean);
+  try {
+    for (const f of readdirSync(join(ROOT, "deployments")).filter((f) => f.endsWith(".json"))) {
+      const d = JSON.parse(readFileSync(join(ROOT, "deployments", f), "utf8"));
+      if (d.address?.toLowerCase() === GAME.toLowerCase()) return (d.previous ?? []).map((x) => x.address);
+    }
+  } catch {}
+  return [];
+}
+const PREVIOUS_GAMES = previousGames();
 // Squeektoshi's X livestream; change it when the stream restarts with a new broadcast.
 const STREAM_BROADCAST_ID = env.STREAM_BROADCAST_ID || "1qKVmyjXjZWxB";
 const chain = env.CHAIN === "hardhat" ? hardhat : sepolia;
@@ -50,7 +64,7 @@ try {
   const count = Number(env.BOTS ?? 5);
   if (count > 0 && (await isTestToken(pub, sqk))) {
     bots = createBots({
-      count, seedKey: env.WATCHER_PRIVATE_KEY, pub, chain, rpc: RPC, game: GAME, abi, sqk, log: (...a) => log(...a),
+      count, seedKey: env.WATCHER_PRIVATE_KEY, pub, chain, rpc: RPC, game: GAME, abi, sqk, log: (...a) => log(...a), previousGames: PREVIOUS_GAMES,
       fund: async (to, value) => {
         const hash = await wallet.sendTransaction({ to, value });
         await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
@@ -225,6 +239,34 @@ async function openNextIfIdle() {
   }
 }
 
+// ---------------------------------------------------------------- previous game contracts
+
+// After a redeploy, a lobby left open on an earlier contract would wait 7 days for its backstop. Void it, so
+// everyone in it can claim their buy-in back right away. Live or ended games there are left alone.
+const retired = new Set();
+async function retirePreviousLobbies() {
+  for (const address of PREVIOUS_GAMES) {
+    if (retired.has(address)) continue;
+    try {
+      const [count, theirWatcher] = await Promise.all([
+        pub.readContract({ address, abi, functionName: "gameCount" }),
+        pub.readContract({ address, abi, functionName: "watcher" }),
+      ]);
+      if (theirWatcher.toLowerCase() !== account.address.toLowerCase()) { retired.add(address); continue; }
+      const g = count > 0n ? await pub.readContract({ address, abi, functionName: "getGame", args: [count] }) : null;
+      if (g && Status[Number(g.status)] === "Lobby") {
+        const { request } = await pub.simulateContract({ account, address, abi, functionName: "voidGame", args: [count, "moved to a new game contract"] });
+        const hash = await wallet.writeContract(request);
+        await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
+        log("previous_lobby_voided", { contract: address, game: Number(count), tx: hash });
+      }
+      if (!g || ["Settled", "Voided", "RolledOver", "Lobby"].includes(Status[Number(g.status)])) retired.add(address);
+    } catch (e) {
+      log("previous_contract_retry", { contract: address, error: String(e.shortMessage || e.message || e) });
+    }
+  }
+}
+
 // ---------------------------------------------------------------- main loop
 
 let busy = false;
@@ -258,6 +300,7 @@ async function chainWork() {
       if (game.status === "Ended" && !game.queue.length) await tryFinalize(id);
     }
     await openNextIfIdle();
+    await retirePreviousLobbies();
     if (bots) await bots.chainWork(Math.max(0, ...chainGames.keys()), chainGames);
     persist();
   } catch (e) {
@@ -286,7 +329,7 @@ createServer((req, res) => {
   if (url.pathname === "/config.json") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify({ gameAddress: GAME, chainId: chain.id, rpcUrl: RPC, squeekApi: API, watcher: account.address, bots: bots?.list() ?? [],
-      streamBroadcastId: STREAM_BROADCAST_ID }));
+      streamBroadcastId: STREAM_BROADCAST_ID, previousGames: PREVIOUS_GAMES }));
   }
   const rel = url.pathname === "/" ? "/web/index.html" : url.pathname.startsWith("/shared/") ? url.pathname : `/web${url.pathname}`;
   const file = normalize(join(ROOT, rel));

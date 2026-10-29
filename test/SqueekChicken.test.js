@@ -21,7 +21,7 @@ async function deploy() {
 async function createGame(game, over = {}) {
   const now = await time.latest();
   const p = {
-    buyIn: BUY, earliestStart: now + 3600, idleWindow: 180, grace: 12, curveStep: 120,
+    buyIn: BUY, earliestStart: now + 3600, idleWindow: 180, grace: 12,
     jackpotBps: 2000, jackpotGroupBps: 1000, bountyFlat: BOUNTY, minPlayers: 3, maxPlayers: 200, ...over,
   };
   await game.createGame(p);
@@ -79,13 +79,40 @@ describe("SqueekChicken", () => {
       await expect(game.connect(ten[8]).claim(id)).to.be.revertedWithCustomError(game, "NothingToClaim");
     });
 
-    it("matches the agreed curve: +25% weight per 2 minutes, smooth within a step", async () => {
+    it("weights each exit by the seconds on the wheel (at least 1)", async () => {
       const { game, id, start } = await loadFixture(playedGame);
-      const one = ethers.parseEther("1");
-      expect(await game.weightAt(id, start)).to.equal(one);
-      expect(await game.weightAt(id, start + 120)).to.equal(ethers.parseEther("1.25"));
-      expect(await game.weightAt(id, start + 240)).to.equal(ethers.parseEther("1.5625"));
-      expect(await game.weightAt(id, start + 60)).to.equal(ethers.parseEther("1.125"));
+      expect(await game.weightAt(id, start)).to.equal(1n);
+      expect(await game.weightAt(id, start + 60)).to.equal(60n);
+      expect(await game.weightAt(id, start + 120)).to.equal(120n);
+      expect(await game.weightAt(id, start + 3600)).to.equal(3600n);
+    });
+
+    it("pays twice the curve share for twice the time on the wheel", async () => {
+      // Winners at +1 to +6 min, then one at the grace edge; the jackpot goes only to the last.
+      const { game, ten, id } = await loadFixture(playedGame);
+      await game.finalize(id);
+      const at1 = await game.claimable(id, ten[0].address), at2 = await game.claimable(id, ten[1].address);
+      const at4 = await game.claimable(id, ten[3].address);
+      expect(at2).to.be.closeTo(at1 * 2n, 1n); // integer division can differ by 1 base unit
+      expect(at4).to.be.closeTo(at2 * 2n, 1n);
+    });
+
+    it("pays exactly what the page's payout maths (shared/payouts.js) predicts", async () => {
+      // 3 players at 100; exits at +33 s and +83 s; last movement at +90 s; 3 bounty (1% cap). Net 297:
+      // jackpot 59.4 to the last winner, curve pool 237.6 split 33 : 83.
+      const f = await deploy();
+      const { game, watcher, players } = f;
+      const { id, p } = await createGame(game, { buyIn: ethers.parseEther("100"), bountyFlat: ethers.parseEther("5"), minPlayers: 2 });
+      for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
+      const start = p.earliestStart + 10;
+      await at(start + 1, () => game.connect(watcher).postStart(id, start));
+      await at(start + 33, () => game.connect(players[0]).exit(id));
+      await at(start + 83, () => game.connect(players[1]).exit(id));
+      await at(start + 90 + 180, () => game.connect(watcher).postEnd(id, start + 90, 1));
+      await game.finalize(id);
+      const a = await game.claimable(id, players[0].address), b = await game.claimable(id, players[1].address);
+      expect(a).to.be.closeTo(ethers.parseEther("237.6") * 33n / 116n, 2n);
+      expect(b).to.be.closeTo(ethers.parseEther("237.6") * 83n / 116n + ethers.parseEther("59.4"), 2n);
     });
 
     it("caps the bounty at 1% of the pot", async () => {
@@ -327,7 +354,7 @@ describe("SqueekChicken", () => {
       const f = await deploy();
       const now = await time.latest();
       await f.game.setDefaults({
-        buyIn: BUY, earliestStart: 0, idleWindow: 180, grace: 12, curveStep: 120, jackpotBps: 2000,
+        buyIn: BUY, earliestStart: 0, idleWindow: 180, grace: 12, jackpotBps: 2000,
         jackpotGroupBps: 1000, bountyFlat: BOUNTY, minPlayers: 2, maxPlayers: 200 }, 300);
       return { ...f, now };
     }

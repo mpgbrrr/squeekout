@@ -170,11 +170,6 @@
             "type": "uint32"
           },
           {
-            "internalType": "uint32",
-            "name": "curveStep",
-            "type": "uint32"
-          },
-          {
             "internalType": "uint16",
             "name": "jackpotBps",
             "type": "uint16"
@@ -313,11 +308,6 @@
           {
             "internalType": "uint32",
             "name": "grace",
-            "type": "uint32"
-          },
-          {
-            "internalType": "uint32",
-            "name": "curveStep",
             "type": "uint32"
           },
           {
@@ -576,19 +566,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "MAX_CURVE_STEPS",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -695,11 +672,6 @@
             "type": "uint32"
           },
           {
-            "internalType": "uint32",
-            "name": "curveStep",
-            "type": "uint32"
-          },
-          {
             "internalType": "uint16",
             "name": "jackpotBps",
             "type": "uint16"
@@ -763,11 +735,6 @@
       {
         "internalType": "uint32",
         "name": "grace",
-        "type": "uint32"
-      },
-      {
-        "internalType": "uint32",
-        "name": "curveStep",
         "type": "uint32"
       },
       {
@@ -979,11 +946,6 @@
               {
                 "internalType": "uint32",
                 "name": "grace",
-                "type": "uint32"
-              },
-              {
-                "internalType": "uint32",
-                "name": "curveStep",
                 "type": "uint32"
               },
               {
@@ -1242,11 +1204,6 @@
           {
             "internalType": "uint32",
             "name": "grace",
-            "type": "uint32"
-          },
-          {
-            "internalType": "uint32",
-            "name": "curveStep",
             "type": "uint32"
           },
           {

@@ -27,7 +27,8 @@ export async function isTestToken(pub, sqk) {
  * @param seedKey the watcher's private key; each bot's key is derived from it
  * @param fund(address, wei) sends gas money from the watcher (called from the watcher's chain work)
  */
-export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fund, log }) {
+export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fund, log, previousGames = [] }) {
+  let previousCheckedAt = 0;
   const bots = Array.from({ length: count }, (_, i) => {
     const account = privateKeyToAccount(keccak256(stringToHex(`${seedKey}:squeek-chicken-bot:${i}`)));
     return {
@@ -73,6 +74,20 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
 
     /** Every 15 s, from the watcher's chain work: gas top-ups, joining the open lobby, and claims. */
     async chainWork(gameCount, games) {
+      // Every 5 minutes: refunds or winnings left in earlier game contracts (after a redeploy).
+      if (previousGames.length && Date.now() - previousCheckedAt > 5 * 60_000) {
+        previousCheckedAt = Date.now();
+        for (const address of previousGames) {
+          const last = Number(await pub.readContract({ address, abi, functionName: "gameCount" }).catch(() => 0n));
+          for (let id = Math.max(1, last - 4); id <= last; id++) {
+            for (const bot of bots) {
+              if (bot.busy) continue;
+              const owed = await pub.readContract({ address, abi, functionName: "claimable", args: [BigInt(id), bot.account.address] }).catch(() => 0n);
+              if (owed > 0n) run(bot, `claim game #${id} on a previous contract`, () => send(bot, address, abi, "claim", [BigInt(id)]));
+            }
+          }
+        }
+      }
       const now = Date.now() / 1000;
       for (const bot of bots) {
         if ((await pub.getBalance({ address: bot.account.address })) < GAS_LOW) {

@@ -37,7 +37,6 @@ async function main() {
     earliestStart: 0, // set per game: opening time + minLobby
     idleWindow: 180, // the wheel still for 3 minutes ends the game
     grace: 12, // one Ethereum block
-    curveStep: 120, // +25% weight per 2 minutes
     jackpotBps: 2000, // 20% jackpot
     jackpotGroupBps: 1000, // shared by the last 10% of winners
     bountyFlat: ethers.parseEther(env.BOUNTY || "5"),

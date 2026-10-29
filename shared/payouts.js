@@ -4,20 +4,15 @@
 
 export const RULES = {
   grace: 12, // seconds after the last movement an exit still wins
-  curveStep: 120, // seconds per +25% weight
   jackpotBps: 2000, // 20% of the pot
   jackpotGroupBps: 1000, // shared by the last 10% of winners
   bountyFlat: 5, // SQK to whoever finalizes
   bountyCapBps: 100, // at most 1% of the pot
-  maxCurveSteps: 180,
 };
 
-/** Weight of an exit `seconds` after the start: +25% per curve step, smooth within a step. */
-export function weight(seconds, r = RULES) {
-  const s = Math.max(0, seconds);
-  const steps = Math.floor(s / r.curveStep);
-  if (steps >= r.maxCurveSteps) return 1.25 ** r.maxCurveSteps;
-  return 1.25 ** steps * (1 + (0.25 * (s % r.curveStep)) / r.curveStep);
+/** Weight of an exit `seconds` after the start: the seconds on the wheel (at least 1). */
+export function weight(seconds) {
+  return Math.max(1, Math.floor(seconds));
 }
 
 /**
@@ -40,9 +35,9 @@ export function settle({ buyIn, inPot, rollover = 0, exits, lastMove }, r = RULE
   const jackpotCount = winners.filter((w) => w.t >= fromTime).length; // ties with the boundary share too
   const jackpotPool = (net * r.jackpotBps) / 10_000;
   const curvePool = net - jackpotPool;
-  const sumW = winners.reduce((a, w) => a + weight(w.t, r), 0);
+  const sumW = winners.reduce((a, w) => a + weight(w.t), 0);
   for (const w of winners) {
-    const curve = (curvePool * weight(w.t, r)) / sumW;
+    const curve = (curvePool * weight(w.t)) / sumW;
     const jackpot = w.t >= fromTime ? jackpotPool / jackpotCount : 0;
     payouts.set(w.id, { curve, jackpot, total: curve + jackpot });
   }

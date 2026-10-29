@@ -18,7 +18,7 @@ Everyone buys in with SQK while the lobby is open. The lobby closes the moment t
 | Next game | Opens automatically as soon as the previous one finishes |
 | Game ends | When the wheel has been still for **3 minutes**, at his last movement |
 | Grace | Exits up to **12 s** (one Ethereum block) after his last movement still win |
-| Payout curve | Your weight grows **+25% every 2 minutes** you stay in, smoothly to the second |
+| Payout curve | Your weight is your **time on the wheel**, to the second: stay twice as long, earn twice the share. (Until 29 Oct 2026 it was +25% per 2 minutes, which was nearly flat in short runs, so bailing first often paid.) |
 | Jackpot | **20%** of the pot is shared by the **last 10%** of winners (at least one) |
 | Everyone else who got off in time | Shares the other 80% by weight |
 | Everyone caught | The pot rolls into the next game |

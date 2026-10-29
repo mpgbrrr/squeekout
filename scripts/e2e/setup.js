@@ -6,10 +6,10 @@ async function main() {
   const sqk = await (await ethers.getContractFactory("MockSQK")).deploy();
   const game = await (await ethers.getContractFactory("SqueekChicken")).deploy(sqk.target, watcher.address);
   const close = Math.floor(Date.now() / 1000) + Number(process.env.CLOSE_IN || 40);
-  await (await game.createGame({ buyIn: ethers.parseEther("100"), earliestStart: close, idleWindow: 180, grace: 12, curveStep: 120,
+  await (await game.createGame({ buyIn: ethers.parseEther("100"), earliestStart: close, idleWindow: 180, grace: 12,
     jackpotBps: 2000, jackpotGroupBps: 1000, bountyFlat: ethers.parseEther("5"), minPlayers: 2, maxPlayers: 200 })).wait();
   // Defaults let the watcher open the next game itself once this one finishes.
-  await (await game.setDefaults({ buyIn: ethers.parseEther("100"), earliestStart: 0, idleWindow: 180, grace: 12, curveStep: 120,
+  await (await game.setDefaults({ buyIn: ethers.parseEther("100"), earliestStart: 0, idleWindow: 180, grace: 12,
     jackpotBps: 2000, jackpotGroupBps: 1000, bountyFlat: ethers.parseEther("5"), minPlayers: 2, maxPlayers: 200 }, 300)).wait();
   for (const p of [a, b, c]) {
     await (await sqk.mint(p.address, ethers.parseEther("1000"))).wait();
