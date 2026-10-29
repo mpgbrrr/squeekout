@@ -1,4 +1,4 @@
-// Squeekchain Chicken web app: the hamster cam, the current game, and the player's actions.
+// Squeek Out web app: the hamster cam, the current game, and the player's actions.
 import { createPublicClient, createWalletClient, custom, http, formatUnits, parseAbi } from "https://esm.sh/viem@2.21.55";
 import { hardhat, sepolia } from "https://esm.sh/viem@2.21.55/chains";
 import { DEFAULTS, display, newGameState, readingFromStatus, step } from "/shared/rules.js";

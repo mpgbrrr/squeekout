@@ -295,7 +295,12 @@ createServer((req, res) => {
     return res.end();
   }
   try {
-    const body = readFileSync(file);
+    let body = readFileSync(file);
+    // Link previews need absolute URLs: fill in this site's own address.
+    if (extname(file) === ".html") {
+      const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0];
+      body = body.toString("utf8").replaceAll("%ORIGIN%", `${proto}://${req.headers.host}`);
+    }
     // no-cache: browsers may keep a copy but must check for a newer one, so a deploy shows up on reload.
     res.writeHead(200, { "content-type": TYPES[extname(file)] || "application/octet-stream", "cache-control": "no-cache" });
     res.end(body);

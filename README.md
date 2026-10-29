@@ -1,6 +1,8 @@
-# Squeekchain Chicken
+# Squeek Out
 
-A testnet game of chicken on [Squeekchain](https://docs.squeekchain.com/), the blockchain powered by Squeektoshi the hamster running on his wheel.
+**Ride the wheel. Bail before he stops.** A testnet game of nerve on [Squeekchain](https://docs.squeekchain.com/), the blockchain powered by Squeektoshi the hamster running on his wheel.
+
+(The repository, the contract `SqueekChicken` and some internal names keep the game's working title, Squeekchain Chicken.)
 
 Everyone buys in with SQK while the lobby is open. The lobby closes the moment the hamster starts running, and you're on the wheel. Get off whenever you like: the longer you stay, the bigger your share. Once the wheel has been still for 3 minutes, the game ends at his last movement. Anyone still on, or who got off too late, is caught and gets nothing. When a game finishes, the next one opens automatically.
 

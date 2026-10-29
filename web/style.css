@@ -14,6 +14,14 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--b
 header, main { max-width: 1080px; margin: 0 auto; }
 header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 20px 8px; }
 h1 { font-family: var(--pixel); font-size: 1.05rem; line-height: 1.6; margin: 0; color: var(--wheel); }
+/* Squeek Out wordmark: the O of OUT is Squeektoshi's wheel, turning slowly */
+.brand { display: grid; gap: 4px; text-decoration: none; color: var(--wheel); }
+.wordmark { display: inline-flex; align-items: center; font-family: var(--pixel); font-size: clamp(1.05rem, 3.4vw, 1.5rem); line-height: 1; letter-spacing: 0.02em;
+  text-shadow: 3px 3px 0 #1a1405; white-space: nowrap; }
+.wheel-o { width: 1.05em; height: 1.05em; margin: 0 0.04em 0 0.55em; filter: drop-shadow(3px 3px 0 #1a1405); animation: wheel-turn 6s linear infinite; }
+@keyframes wheel-turn { to { transform: rotate(360deg); } }
+.tagline { font-family: var(--body); font-size: 0.82rem; font-weight: 700; color: var(--ink-2); letter-spacing: 0.01em; }
+@media (prefers-reduced-motion: reduce) { .wheel-o { animation: none; } }
 h2 { font-family: var(--pixel); font-size: 0.7rem; letter-spacing: 0.04em; margin: 0 0 12px; color: var(--ink-2); }
 main { display: grid; gap: 18px; padding-block: 8px 48px; }
 .top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; }

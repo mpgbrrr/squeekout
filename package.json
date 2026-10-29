@@ -2,7 +2,7 @@
   "name": "squeek-chicken",
   "private": true,
   "version": "0.1.0",
-  "description": "Testnet chicken game on Squeekchain: stay on the wheel, exit before the hamster stops.",
+  "description": "Squeek Out: ride Squeektoshi's wheel on Squeekchain and bail before he stops.",
   "scripts": {
     "compile": "hardhat compile && node scripts/export-abi.js",
     "test": "hardhat test && node --test test/rules.test.mjs test/payouts.test.mjs",

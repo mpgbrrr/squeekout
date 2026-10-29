@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <!-- Squeek Out: Squeektoshi's wheel on the night-sky navy -->
+  <rect width="32" height="32" rx="7" fill="#0d1126"/>
+  <circle cx="16" cy="16" r="10.5" fill="none" stroke="#f2c94c" stroke-width="3"/>
+  <path d="M16 6v20M6 16h20M9 9l14 14M23 9 9 23" stroke="#f2c94c" stroke-width="1.5"/>
+  <circle cx="16" cy="16" r="3" fill="#e8913a"/>
+</svg>
