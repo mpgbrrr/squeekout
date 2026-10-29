@@ -544,7 +544,7 @@ function renderDemo() {
   // Who got off first at the top, then anyone on their way off, then everyone still on.
   const order = (p) => (p.exit != null ? p.exit : p.landsAt != null ? 1e9 : 2e9);
   $("players").innerHTML = [...players].sort((a, b) => order(a) - order(b)).map((p) => {
-    const off = p.exit != null ? since(p.exit) : p.landsAt != null ? "getting off…" : "still on";
+    const off = p.exit != null ? since(p.exit) : p.landsAt != null ? (s.phase === "ended" ? "too late" : "getting off…") : s.phase === "ended" ? "never got off" : "still on";
     const pay = s.phase !== "ended" ? "—" : payout(p) ? demoSqk(payout(p)) : "caught";
     return `<tr><td>${p.name}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("");
@@ -568,6 +568,7 @@ function renderDemo() {
     $("youStatus").textContent = s.result.rolledOver ? "Everyone was caught, so the pot rolls into the next game."
       : won ? `You got off at ${since(you.exit)} and won ${demoSqk(won)} (${(won / demo.buyIn).toFixed(2)}×)${jackpot ? ", including a jackpot share" : ""}.`
       : you.exit != null ? `Too late: you got off at ${since(you.exit)}, but he'd already stopped at ${since(s.lastMove - s.start)}. Caught.`
+      : you.landsAt != null ? `Too late: your exit hadn't landed when the game ended. He'd already stopped at ${since(s.lastMove - s.start)}, and getting off during a break only counts if he runs again. Caught.`
       : "Caught! You were still on the wheel when he stopped.";
   }
 }
