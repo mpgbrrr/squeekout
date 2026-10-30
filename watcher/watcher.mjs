@@ -9,6 +9,8 @@
 //   SQUEEK_API            Squeekchain API base (default https://api.squeekchain.com)
 //   STATE_FILE            where game state survives restarts (default /data/state.json; mount a volume)
 //   STREAM_BROADCAST_ID   the X broadcast of Squeektoshi the page can show (x.com/i/broadcasts/<id>)
+//   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY  push notification keys for start alerts (npx web-push generate-vapid-keys);
+//                         without them only the page's own alarm works. VAPID_SUBJECT: contact URL or mailto
 //   PREVIOUS_GAME_ADDRESSES  earlier game contracts (comma-separated) whose refunds and winnings players can still
 //                         claim from the page; defaults to the "previous" list in this game's deployments/ record
 //   PORT                  web server port (default 3000)
@@ -23,6 +25,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { hardhat, sepolia } from "viem/chains";
 import { DEFAULTS, newGameState, readingFromStatus, step, trackRun } from "../shared/rules.js";
 import { createBots, isTestToken } from "./bots.mjs";
+import { createPush } from "./push.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const env = process.env;
@@ -109,6 +112,27 @@ for (const g of Object.values(saved.games)) {
     g.rules.outage = { since: saved.savedAt, counterBefore: g.rules.lastCounter, lastMoveBefore: g.rules.lastMove };
   }
 }
+// Start alerts by push notification; subscriptions are kept next to the game state, on the volume.
+const push = createPush({
+  file: join(dirname(STATE_FILE), "push-subscriptions.json"),
+  publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT, log: (...a) => log(...a),
+});
+
+// Alerts subscribers when a game starts, unless it will be voided for having too few players.
+async function alertStart(id) {
+  try {
+    const [g, players] = await Promise.all([
+      pub.readContract({ address: GAME, abi, functionName: "getGame", args: [BigInt(id)] }),
+      pub.readContract({ address: GAME, abi, functionName: "getPlayers", args: [BigInt(id)] }),
+    ]);
+    if (Number(g.entrants) < Number(g.p.minPlayers)) return;
+    const sent = await push.gameStarted({ id, players });
+    log("start_alerts_sent", { game: id, sent, subscribers: push.count });
+  } catch (e) {
+    log("start_alerts_failed", { game: id, error: String(e.shortMessage || e.message || e) });
+  }
+}
+
 function persist() {
   saved.savedAt = Math.floor(Date.now() / 1000);
   try {
@@ -298,6 +322,7 @@ async function tick() {
     if (decision) {
       game.queue.push(decision);
       log("decided", { game: Number(id), ...decision });
+      if (decision.type === "start" && push.enabled) alertStart(Number(id));
     }
     if (bots && game.status === "Live" && game.rules.phase === "live") {
       bots.onSecond(Number(id), game.rules, latest, chainGames.get(Number(id))?.startTime ?? game.rules.startTime, now)
@@ -329,9 +354,27 @@ async function chainWork() {
 
 // ---------------------------------------------------------------- web server
 
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml" };
-createServer((req, res) => {
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".css": "text/css",
+  ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json" };
+
+// Reads a small JSON request body (start alert subscriptions).
+function readJson(req, limit = 8192) {
+  return new Promise((resolve) => {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > limit) { req.destroy(); resolve(null); } });
+    req.on("end", () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    req.on("error", () => resolve(null));
+  });
+}
+
+createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
+  if (req.method === "POST" && (url.pathname === "/push/subscribe" || url.pathname === "/push/unsubscribe")) {
+    const body = await readJson(req);
+    const ok = url.pathname === "/push/subscribe" ? await push.subscribe(body) : push.unsubscribe(body);
+    res.writeHead(ok ? 200 : 400, { "content-type": "application/json", "cache-control": "no-store" });
+    return res.end(JSON.stringify({ ok }));
+  }
   if (url.pathname === "/log") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify(recent.slice(-200)));
@@ -346,7 +389,7 @@ createServer((req, res) => {
   if (url.pathname === "/config.json") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify({ gameAddress: GAME, chainId: chain.id, rpcUrl: RPC, squeekApi: API, watcher: account.address, bots: bots?.list() ?? [],
-      streamBroadcastId: STREAM_BROADCAST_ID, previousGames: PREVIOUS_GAMES }));
+      streamBroadcastId: STREAM_BROADCAST_ID, previousGames: PREVIOUS_GAMES, vapidPublicKey: push.publicKey }));
   }
   const rel = url.pathname === "/" ? "/web/index.html" : url.pathname.startsWith("/shared/") ? url.pathname : `/web${url.pathname}`;
   const file = normalize(join(ROOT, rel));

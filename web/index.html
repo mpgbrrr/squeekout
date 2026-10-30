@@ -6,6 +6,10 @@
 <title>Squeek Out</title>
 <meta name="description" content="Ride Squeektoshi's wheel and bail before he stops. A game of nerve on Squeekchain, the hamster-powered blockchain.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0d1126">
+<meta name="apple-mobile-web-app-title" content="Squeek Out">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Squeek Out">
 <meta property="og:title" content="Squeek Out">
@@ -56,6 +60,7 @@
   </div>
 </header>
 <main>
+  <div class="alert-banner" id="alertBanner" role="alert" hidden></div>
   <div class="banner" id="demoBanner" hidden>Demo game: a simulated Squeektoshi and simulated players. No wallet, no SQK, nothing on-chain. Same rules and payout maths as the real game.</div>
   <section class="top">
     <div class="panel">
@@ -90,6 +95,10 @@
     <div class="panel" id="gameCard">
       <h2 id="gameTitle">Game</h2>
       <span class="pill" id="gameStatus">Loading</span>
+      <div class="alert-row">
+        <button class="secondary small" id="alertToggle" aria-pressed="false">🔕 Start alerts: off</button>
+        <span class="alert-note" id="alertNote">Get an alarm the moment Squeektoshi starts, so you never miss a game you joined.</span>
+      </div>
       <div class="facts">
         <div><b id="fBuyIn">—</b><span>Buy-in</span></div>
         <div><b id="fPot">—</b><span>Pot</span></div>
@@ -122,6 +131,7 @@
       <li>Breaks are where the nerve comes in: getting off during a break only counts if he runs again before 3 minutes pass. While he's running, getting off is always safe.</li>
       <li>If Squeekchain's feed drops while the hamster may have stopped out of sight, the game is voided and everyone gets their buy-in back.</li>
       <li>If everyone is caught, the pot rolls into the next game. A new game opens as soon as one finishes.</li>
+      <li>Joined while he's asleep? Turn on <b>Start alerts</b> in the game card for an alarm the moment he starts running. With notifications allowed, it reaches you even when this page is closed (on iPhone, add the site to your Home Screen first).</li>
       <li>There's no house fee. Whoever finalizes the payouts earns a small bounty (5 SQK, at most 1% of the pot).</li>
       <li>This runs on the Sepolia testnet: testnet SQK has no value.</li>
     </ul>

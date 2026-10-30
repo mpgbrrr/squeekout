@@ -9,6 +9,7 @@ import { signPermit } from "/permit.mjs";
 import { createFinale } from "/finale.mjs";
 import { createNames, escapeHtml, short } from "/names.mjs";
 import { createWallet, installedWallets, walletErrorText } from "/wallet.mjs";
+import { createAlerts } from "/alerts.mjs";
 
 const $ = (id) => document.getElementById(id);
 // Browser storage that never throws (private windows, blocked storage).
@@ -155,6 +156,9 @@ async function pollFeed() {
   const stepped = step({ ...rules, phase: rules.phase === "done" ? "live" : rules.phase }, reading, now);
   rules = stepped.state;
   if (stepped.decision?.type === "end") celebrateLive(stepped.decision.lastMove);
+  // He just started: if the open game is in its lobby with enough players, it's starting now.
+  if (stepped.decision?.type === "start" && game && Status[Number(game.status)] === "Lobby"
+    && game.players.filter((p) => !p.entry.left).length >= Number(game.p.minPlayers)) alertStart(game);
   if (demo) return;
   const view = display(rules, reading, now);
   liveRun.update(view, rules.lastMove, now);
@@ -185,6 +189,45 @@ try {
 }
 setInterval(pollFeed, 2000);
 pollFeed();
+
+// ---------------------------------------------------------------- start alerts
+
+// An alarm the moment a game starts, so nobody who joined while he slept misses it (toggle in the game card).
+const alerts = createAlerts({
+  vapidPublicKey: cfg.vapidPublicKey || null,
+  getAddress: () => me,
+  onChange({ on, note }) {
+    const b = $("alertToggle");
+    b.textContent = on ? "🔔 Start alerts: on" : "🔕 Start alerts: off";
+    b.setAttribute("aria-pressed", String(on));
+    $("alertNote").textContent = note || (on ? "" : "Get an alarm the moment Squeektoshi starts, so you never miss a game you joined.");
+  },
+});
+$("alertToggle").onclick = () => alerts.toggle();
+alerts.restore();
+
+let alertBannerTimer = null;
+function showAlertBanner(text) {
+  const el = $("alertBanner");
+  el.textContent = text;
+  el.hidden = false;
+  el.onclick = () => { el.hidden = true; };
+  clearTimeout(alertBannerTimer);
+  alertBannerTimer = setTimeout(() => { el.hidden = true; }, 20_000);
+}
+
+const startAlerted = new Set(); // game ids already alerted on this page
+function alertStart(g) {
+  if (demo || !g || startAlerted.has(g.id)) return;
+  startAlerted.add(g.id);
+  const mine = me && g.players.some((p) => p.addr.toLowerCase() === me.toLowerCase() && !p.entry.left);
+  showAlertBanner(mine ? `🐹 He's running! You're on the wheel in game #${g.id}` : `🐹 He's running! Game #${g.id} is on`);
+  alerts.ring({
+    title: mine ? "You're on the wheel!" : "Squeektoshi is running!",
+    body: mine ? `Game #${g.id} is live. Get off before he stops.` : `Game #${g.id} just started.`,
+    tag: `squeekout-game-${g.id}`, // same as the watcher's push, so a phone shows one notification
+  });
+}
 
 // ---------------------------------------------------------------- livestream
 
@@ -249,6 +292,7 @@ async function loadGame() {
   const status = Status[Number(g.status)], before = seenStatus.get(id);
   seenStatus.set(id, status);
   if (before === "Live" && ["Ended", "Settled", "RolledOver"].includes(status)) celebrateLive(Number(g.lastMove));
+  if (before === "Lobby" && status === "Live") alertStart(game);
   updateFinaleClaim().catch(() => {});
   updateUnclaimed(id).catch(() => {});
   if (rules.earliestStart !== Number(g.p.earliestStart)) rules = { ...rules, earliestStart: Number(g.p.earliestStart) };
@@ -470,7 +514,7 @@ function celebrateDemo() {
 
 // ---------------------------------------------------------------- demo mode
 
-let demoSpeed = 5, demoTimer = null, demoRun = null, demoCelebrated = false;
+let demoSpeed = 5, demoTimer = null, demoRun = null, demoCelebrated = false, demoPhase = null;
 const demoMoments = createMoments();
 const demoSqk = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} SQK`;
 
@@ -478,6 +522,7 @@ function startDemo() {
   demo = createDemo();
   demoRun = createRunClock();
   demoCelebrated = false;
+  demoPhase = null;
   finale.close();
   setCamView("cartoon");
   $("unclaimed").hidden = true;
@@ -526,6 +571,11 @@ function renderDemo() {
   showTimer(view, demoRun, s.t, s.phase === "live");
   finale.countdown(s.phase === "live" && view.mode === "paused" ? s.rules.lastMove + DEFAULTS.idleWindow - s.t : null);
   if (s.phase === "ended" && !demoCelebrated) { demoCelebrated = true; celebrateDemo(); }
+  if (demoPhase === "lobby" && s.phase === "live") {
+    showAlertBanner("🐹 Demo: he's running! Game on");
+    alerts.ring({ title: "Demo: Squeektoshi is running!", body: "Your demo game just started.", tag: "squeekout-demo" });
+  }
+  demoPhase = s.phase;
   if (s.phase !== "lobby") demoMoments.update(view.mode, s.t);
   const stillOn = players.filter((p) => p.exit == null).length;
   const events = [...demoMoments.list];
@@ -627,6 +677,7 @@ const conn = createWallet({
     if (!wrongChain && /wrong network/.test($("msg").textContent)) msg("");
     $("faucet").hidden = !(TEST_TOKEN && address);
     if (changed) {
+      alerts.walletChanged();
       unclaimedCheckedAt = 0;
       $("unclaimed").hidden = true;
       if (game) loadGame().catch(() => {});

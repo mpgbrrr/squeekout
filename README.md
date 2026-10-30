@@ -82,6 +82,7 @@ GAME=<game> npx hardhat run scripts/e2e/second-game.js --network localhost    # 
    This writes `deployments/sepolia.json`; commit it. It uses Squeekchain's current Sepolia contracts (below) and switches the settled-round check on. Override with `SQK_ADDRESS` and `SQUEEK_CORE` (`SQUEEK_CORE=off` skips the check).
 3. **Run the watcher** on an always-on host. The repo's `Dockerfile` builds it. On Railway:
    - New project → Deploy from GitHub repo → this repo.
+   - Start alerts by push need `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (generate with `npx web-push generate-vapid-keys`; the private key is a secret). Without them, only the page's own alarm works. Subscriptions are kept on the volume, next to the game state.
    - Variables: `GAME_ADDRESS`, `WATCHER_PRIVATE_KEY`, and optionally `RPC_URL` (a dedicated Sepolia RPC is more reliable than the public default) and `STREAM_BROADCAST_ID` (the X broadcast the cam's "Live stream" view shows, from `x.com/i/broadcasts/<id>`; change it when the stream restarts).
    - Add a **volume** mounted at `/data`, so the watcher's game state survives restarts. Without it, a restart during a live game voids that game.
    - Generate a public domain: that URL is the web app. The live game also has a custom domain, `squeekout.fun` (Settings → Networking → Custom Domain in Railway, with an ALIAS record at the registrar, Name.com). Link previews use whichever address the visitor came in on.
