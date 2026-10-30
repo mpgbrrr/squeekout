@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades, network } = require("hardhat");
 const { time, loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
 const BUY = ethers.parseEther("1000");
@@ -10,7 +10,8 @@ async function deploy() {
   const [owner, watcher, keeper, ...rest] = await ethers.getSigners();
   const players = rest.slice(0, 12);
   const sqk = await (await ethers.getContractFactory("MockSQK")).deploy();
-  const game = await (await ethers.getContractFactory("SqueekChicken")).deploy(sqk.target, watcher.address);
+  const game = await upgrades.deployProxy(await ethers.getContractFactory("SqueekChicken"),
+    [sqk.target, watcher.address, owner.address], { kind: "uups" });
   for (const p of players) {
     await sqk.mint(p.address, BUY * 10n);
     await sqk.connect(p).approve(game.target, ethers.MaxUint256);
@@ -22,7 +23,8 @@ async function createGame(game, over = {}) {
   const now = await time.latest();
   const p = {
     buyIn: BUY, earliestStart: now + 3600, idleWindow: 180, grace: 12,
-    jackpotBps: 2000, jackpotGroupBps: 1000, bountyFlat: BOUNTY, minPlayers: 3, maxPlayers: 200, ...over,
+    jackpotBps: 2000, jackpotGroupBps: 1000, bountyFlat: BOUNTY, minPlayers: 3, maxPlayers: 200,
+    lateEntryWindow: 120, ...over,
   };
   await game.createGame(p);
   return { id: await game.gameCount(), p };
@@ -80,11 +82,11 @@ describe("SqueekChicken", () => {
     });
 
     it("weights each exit by the seconds on the wheel (at least 1)", async () => {
-      const { game, id, start } = await loadFixture(playedGame);
-      expect(await game.weightAt(id, start)).to.equal(1n);
-      expect(await game.weightAt(id, start + 60)).to.equal(60n);
-      expect(await game.weightAt(id, start + 120)).to.equal(120n);
-      expect(await game.weightAt(id, start + 3600)).to.equal(3600n);
+      const { game, id, ten, lastMove, start } = await loadFixture(playedGame);
+      expect(await game.weightOf(id, ten[0].address)).to.equal(60n);
+      expect(await game.weightOf(id, ten[1].address)).to.equal(120n);
+      expect(await game.weightOf(id, ten[6].address)).to.equal(BigInt(lastMove + 12 - start));
+      expect(await game.weightOf(id, ten[9].address)).to.equal(1n); // still on: no exit yet
     });
 
     it("pays twice the curve share for twice the time on the wheel", async () => {
@@ -138,6 +140,19 @@ describe("SqueekChicken", () => {
       await game.connect(players[0]).leaveLobby(id);
       expect(await sqk.balanceOf(players[0].address)).to.equal(before + BUY);
       expect((await game.getGame(id)).entrants).to.equal(0n);
+    });
+
+    it("lets a player who left the lobby join again, once", async () => {
+      const { game, sqk, players } = await loadFixture(deploy);
+      const { id } = await createGame(game);
+      const before = await sqk.balanceOf(players[0].address);
+      await game.connect(players[0]).enter(id);
+      await game.connect(players[0]).leaveLobby(id);
+      await game.connect(players[0]).enter(id);
+      await expect(game.connect(players[0]).enter(id)).to.be.revertedWithCustomError(game, "AlreadyEntered");
+      expect(await game.getPlayers(id)).to.deep.equal([players[0].address]);
+      expect((await game.getGame(id)).entrants).to.equal(1n);
+      expect(await sqk.balanceOf(players[0].address)).to.equal(before - BUY);
     });
 
     it("refunds exits made before the hamster started", async () => {
@@ -295,47 +310,115 @@ describe("SqueekChicken", () => {
     });
   });
 
-  describe("lobby open until the hamster runs", () => {
+  describe("lobby open until the hamster runs, then late entries", () => {
+    // Three players in the lobby and a start posted at `start`; returns before anyone gets off.
+    async function liveGame(over = {}) {
+      const f = await deploy();
+      const { game, watcher, players } = f;
+      const { id, p } = await createGame(game, over);
+      for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
+      const start = p.earliestStart + 100;
+      await at(start + 10, () => game.connect(watcher).postStart(id, start));
+      return { ...f, id, p, start };
+    }
+
     it("accepts entries after the minimum lobby time, until the start is posted", async () => {
       const { game, watcher, players } = await loadFixture(deploy);
       const { id, p } = await createGame(game);
       for (const pl of players.slice(0, 2)) await game.connect(pl).enter(id);
       await at(p.earliestStart + 600, () => game.connect(players[2]).enter(id)); // 10 minutes after the minimum
       await at(p.earliestStart + 700, () => game.connect(watcher).postStart(id, p.earliestStart + 690));
-      await expect(game.connect(players[3]).enter(id)).to.be.revertedWithCustomError(game, "WrongStatus");
       expect((await game.getGame(id)).status).to.equal(Status.Live);
     });
 
-    it("refunds an entry that landed after his first movement and keeps it out of the pot and winners", async () => {
-      const { game, watcher, keeper, players, sqk } = await loadFixture(deploy);
+    it("takes late entries for 2 minutes after the start, and pays them from their own join time", async () => {
+      // 3 in the lobby and 1 late at +50 s, at 100 each; bounty 4 (1% cap). Net 396: jackpot 79.2 to the last
+      // winner; curve pool 316.8 split by own time on the wheel: a 80 s, late one 100 - 50 = 50 s.
+      const { game, watcher, players, id, start } = await liveGame({ buyIn: ethers.parseEther("100"), minPlayers: 2 });
+      const [a, , , late] = players;
+      expect(await game.lateEntryOpen(id)).to.equal(true);
+      await at(start + 50, () => game.connect(late).enter(id));
+      await at(start + 80, () => game.connect(a).exit(id));
+      await at(start + 100, () => game.connect(late).exit(id));
+      await at(start + 110 + 180, () => game.connect(watcher).postEnd(id, start + 110, 1));
+      await game.finalize(id);
+      expect(await game.weightOf(id, late.address)).to.equal(50n);
+      expect(await game.claimable(id, a.address)).to.be.closeTo(ethers.parseEther("316.8") * 80n / 130n, 2n);
+      expect(await game.claimable(id, late.address)).to.be.closeTo(ethers.parseEther("316.8") * 50n / 130n + ethers.parseEther("79.2"), 2n);
+    });
+
+    it("closes late entries at the first exit", async () => {
+      const { game, players, id, start } = await loadFixture(liveGame);
+      await at(start + 30, () => game.connect(players[0]).exit(id));
+      expect(await game.lateEntryOpen(id)).to.equal(false);
+      await expect(game.connect(players[3]).enter(id)).to.be.revertedWithCustomError(game, "WrongStatus");
+    });
+
+    it("closes late entries 2 minutes after the start", async () => {
+      const { game, players, id, start } = await loadFixture(liveGame);
+      await at(start + 120, () => game.connect(players[3]).enter(id)); // the last second still counts
+      await time.setNextBlockTimestamp(start + 121);
+      await expect(game.connect(players[4]).enter(id)).to.be.revertedWithCustomError(game, "WrongStatus");
+    });
+
+    it("counts an entry made after his first movement but before the start was posted", async () => {
+      const { game, watcher, keeper, players } = await loadFixture(deploy);
       const { id, p } = await createGame(game);
       const [a, b, c, late] = players;
       for (const pl of [a, b, c]) await game.connect(pl).enter(id);
       const start = p.earliestStart + 100; // his first movement
       await at(start + 4, () => game.connect(late).enter(id)); // saw him run and jumped in
-      await at(start + 6, () => game.connect(late).exit(id)); // and out again before the watcher posted
+      await at(start + 6, () => game.connect(late).exit(id)); // and off again (the first exit) before the post
       await at(start + 15, () => game.connect(watcher).postStart(id, start));
-      await expect(game.connect(late).exit(id)).to.be.revertedWithCustomError(game, "AlreadyExited");
-      expect(await game.claimable(id, late.address)).to.equal(BUY);
+      expect((await game.getGame(id)).firstExitTime).to.equal(BigInt(start + 6));
+      await expect(game.connect(players[4]).enter(id)).to.be.revertedWithCustomError(game, "WrongStatus"); // closed by that exit
       await at(start + 60, () => game.connect(a).exit(id));
       await at(start + 400, () => game.connect(watcher).postEnd(id, start + 100, 1));
       await game.connect(keeper).finalize(id);
+      expect(await game.weightOf(id, late.address)).to.equal(2n); // on from +4 s to +6 s
+      const total = (await game.claimable(id, a.address)) + (await game.claimable(id, late.address));
+      expect(total).to.be.closeTo(BUY * 4n - (BUY * 4n) / 100n, 10n); // the late entry is in the pot (bounty capped at 1%)
+    });
+
+    it("refunds an entry that landed too late before the start was posted, and keeps it out of the pot", async () => {
+      const { game, watcher, keeper, players, sqk } = await loadFixture(deploy);
+      const { id, p } = await createGame(game);
+      const [a, b, c, late] = players;
+      for (const pl of [a, b, c]) await game.connect(pl).enter(id);
+      const start = p.earliestStart + 100;
+      await at(start + 130, () => game.connect(late).enter(id)); // 10 s past the window; the post was slow
+      await at(start + 140, () => game.connect(watcher).postStart(id, start));
+      await expect(game.connect(late).exit(id)).to.be.revertedWithCustomError(game, "LateEntry");
+      expect(await game.claimable(id, late.address)).to.equal(BUY); // refundable straight away
+      await at(start + 160, () => game.connect(a).exit(id));
+      await at(start + 400, () => game.connect(watcher).postEnd(id, start + 200, 1));
+      await game.connect(keeper).finalize(id);
       const pot = BUY * 3n - (BUY * 3n) / 100n; // the late entry isn't in the pot; bounty capped at 1% of 3,000
       expect(await game.claimable(id, a.address)).to.be.closeTo(pot, 10n); // a is the only winner
-      expect(await game.claimable(id, late.address)).to.equal(BUY); // refunded, not a winner
       const before = await sqk.balanceOf(late.address);
       await game.connect(late).claim(id);
       expect(await sqk.balanceOf(late.address)).to.equal(before + BUY);
     });
 
-    it("stops a late entry from exiting once the start is posted", async () => {
+    it("refunds an entry in the same block as the first exit", async () => {
       const { game, watcher, players } = await loadFixture(deploy);
       const { id, p } = await createGame(game);
       for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
       const start = p.earliestStart + 100;
-      await at(start + 4, () => game.connect(players[3]).enter(id));
-      await at(start + 15, () => game.connect(watcher).postStart(id, start));
+      await network.provider.send("evm_setAutomine", [false]);
+      try {
+        await game.connect(players[3]).enter(id);
+        await game.connect(players[0]).exit(id);
+        await network.provider.send("evm_setNextBlockTimestamp", [start + 20]);
+        await network.provider.send("evm_mine");
+      } finally {
+        await network.provider.send("evm_setAutomine", [true]);
+      }
+      await at(start + 30, () => game.connect(watcher).postStart(id, start));
+      expect((await game.entries(id, players[3].address)).enteredAt).to.equal(BigInt(start + 20));
+      expect((await game.getGame(id)).firstExitTime).to.equal(BigInt(start + 20));
       await expect(game.connect(players[3]).exit(id)).to.be.revertedWithCustomError(game, "LateEntry");
+      expect(await game.claimable(id, players[3].address)).to.equal(BUY);
     });
 
     it("lets players leave the lobby with a refund any time before the start", async () => {
@@ -349,13 +432,47 @@ describe("SqueekChicken", () => {
     });
   });
 
+  describe("upgrades", () => {
+    const V2_OPTS = { unsafeAllow: ["missing-initializer"] }; // the mock has nothing new to initialize
+    it("keeps games and balances through an upgrade between games", async () => {
+      const { game, ten, id, owner } = await loadFixture(playedGame);
+      await expect(upgrades.upgradeProxy(game.target, await ethers.getContractFactory("SqueekChickenV2Mock"), V2_OPTS))
+        .to.be.revertedWithCustomError(game, "GameInProgress"); // game Ended, payouts not fixed yet
+      await game.finalize(id);
+      const owed = await game.claimable(id, ten[3].address);
+      const v2 = await upgrades.upgradeProxy(game.target, await ethers.getContractFactory("SqueekChickenV2Mock"), V2_OPTS);
+      expect(v2.target).to.equal(game.target);
+      expect(await v2.version()).to.equal("2");
+      expect(await v2.owner()).to.equal(owner.address);
+      expect(await v2.claimable(id, ten[3].address)).to.equal(owed);
+      await v2.connect(ten[3]).claim(id);
+    });
+
+    it("refuses upgrades while a game is live, and from anyone but the owner", async () => {
+      const { game, watcher, players } = await loadFixture(deploy);
+      const { id, p } = await createGame(game);
+      for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
+      const v2 = await (await ethers.getContractFactory("SqueekChickenV2Mock")).deploy();
+      await expect(game.connect(players[0]).upgradeToAndCall(v2.target, "0x"))
+        .to.be.revertedWithCustomError(game, "OwnableUnauthorizedAccount");
+      await at(p.earliestStart + 1, () => game.connect(watcher).postStart(id, p.earliestStart));
+      await expect(game.upgradeToAndCall(v2.target, "0x")).to.be.revertedWithCustomError(game, "GameInProgress");
+    });
+
+    it("can't be initialized twice", async () => {
+      const { game, sqk, players } = await loadFixture(deploy);
+      await expect(game.initialize(sqk.target, players[0].address, players[0].address))
+        .to.be.revertedWithCustomError(game, "InvalidInitialization");
+    });
+  });
+
   describe("always-on games", () => {
     async function withDefaults() {
       const f = await deploy();
       const now = await time.latest();
       await f.game.setDefaults({
         buyIn: BUY, earliestStart: 0, idleWindow: 180, grace: 12, jackpotBps: 2000,
-        jackpotGroupBps: 1000, bountyFlat: BOUNTY, minPlayers: 2, maxPlayers: 200 }, 300);
+        jackpotGroupBps: 1000, bountyFlat: BOUNTY, minPlayers: 2, maxPlayers: 200, lateEntryWindow: 120 }, 300);
       return { ...f, now };
     }
 
@@ -367,6 +484,21 @@ describe("SqueekChicken", () => {
       expect(g.status).to.equal(Status.Lobby);
       expect(g.p.buyIn).to.equal(BUY);
       expect(g.p.earliestStart).to.equal(BigInt(await time.latest()) + 300n);
+    });
+
+    it("opens the next game once the current one's end is posted, before its payouts are fixed", async () => {
+      const { game, watcher, players } = await loadFixture(withDefaults);
+      await game.connect(watcher).openNextGame();
+      for (const pl of players.slice(0, 2)) await game.connect(pl).enter(1);
+      const s1 = Number((await game.getGame(1)).p.earliestStart);
+      await at(s1 + 5, () => game.connect(watcher).postStart(1, s1));
+      await expect(game.connect(watcher).openNextGame()).to.be.revertedWithCustomError(game, "GameInProgress");
+      await at(s1 + 30, () => game.connect(players[0]).exit(1));
+      await at(s1 + 400, () => game.connect(watcher).postEnd(1, s1 + 100, 1));
+      await game.connect(watcher).openNextGame(); // game 1 is Ended, not yet finalized
+      expect((await game.getGame(2)).status).to.equal(Status.Lobby);
+      await game.finalize(1);
+      expect(await game.claimable(1, players[0].address)).to.be.gt(0n);
     });
 
     it("opens the next game only after the current one has finished", async () => {

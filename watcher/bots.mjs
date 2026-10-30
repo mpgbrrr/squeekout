@@ -1,6 +1,7 @@
 // Test players for testnet games played with the free test token (tSQK). Each has its own wallet, derived
-// from the watcher's key, mints itself tSQK, joins every game at a random moment in the lobby, and gets off
-// the wheel at a random moment in the style of the demo game's bots. The watcher tops up their gas.
+// from the watcher's key, mints itself tSQK, joins every game at a random moment in the lobby (or now and then
+// late, after he starts running), and gets off the wheel at a random moment in the style of the demo game's
+// bots. The watcher tops up their gas.
 // Only used when the game's token is TestSQK, never with real SQK.
 import { createWalletClient, http, keccak256, maxUint256, parseAbi, parseEther, stringToHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -34,7 +35,7 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
     return {
       name: NAMES[i % NAMES.length], style: STYLES[i % STYLES.length], account,
       wallet: createWalletClient({ account, chain, transport: http(rpc) }),
-      busy: false, plans: new Map(), // game id -> { enterAt, breakNerve, maxStay, exitSent }
+      busy: false, plans: new Map(), // game id -> { enterAt, lateAt, joinedAt, breakNerve, maxStay, exitSent }
     };
   });
 
@@ -55,10 +56,14 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
       .finally(() => { bot.busy = false; });
   }
 
-  function planFor(bot, id, lobbyOpenFor) {
+  // `canBeLate`: only a plan made in the lobby may have the bot join late (a plan made mid-game is for a bot
+  // that's already in, for example after a restart).
+  function planFor(bot, id, lobbyOpenFor, canBeLate = false) {
     if (!bot.plans.has(id)) {
       bot.plans.set(id, {
         enterAt: Date.now() / 1000 + rand(5, Math.max(10, lobbyOpenFor * 0.7)),
+        lateAt: canBeLate && Math.random() < 0.2 ? rand(10, 100) : null, // seconds after the start
+        joinedAt: null,
         // How long a break they'll sit through, and how long they'll stay on at most (like the demo's bots).
         breakNerve: bot.style === "jumpy" ? rand(8, 40) : bot.style === "steady" ? rand(40, 140) : rand(150, 400),
         maxStay: bot.style === "greedy" ? Infinity : bot.style === "steady" ? rand(300, 3600) : rand(60, 900),
@@ -102,16 +107,23 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
           if (bot.busy) continue;
           const e = await pub.readContract({ address: game, abi, functionName: "entries", args: [BigInt(id), bot.account.address] });
           const [entered, left, claimed] = [e[0], e[1], e[2]];
+          const join = (what) => run(bot, what, async () => {
+            const bal = await pub.readContract({ address: sqk, abi: token, functionName: "balanceOf", args: [bot.account.address] });
+            if (bal < g.p.buyIn) await send(bot, sqk, token, "mint", [bot.account.address, MINT]);
+            const allowed = await pub.readContract({ address: sqk, abi: token, functionName: "allowance", args: [bot.account.address, game] });
+            if (allowed < g.p.buyIn) await send(bot, sqk, token, "approve", [game, maxUint256]);
+            const hash = await send(bot, game, abi, "enter", [BigInt(id)]);
+            planFor(bot, id, 0).joinedAt = Date.now() / 1000;
+            return hash;
+          });
           if (g.status === "Lobby" && !entered) {
-            const plan = planFor(bot, id, Number(g.p.earliestStart) - now + 120);
-            if (now < plan.enterAt) continue;
-            run(bot, `join game #${id}`, async () => {
-              const bal = await pub.readContract({ address: sqk, abi: token, functionName: "balanceOf", args: [bot.account.address] });
-              if (bal < g.p.buyIn) await send(bot, sqk, token, "mint", [bot.account.address, MINT]);
-              const allowed = await pub.readContract({ address: sqk, abi: token, functionName: "allowance", args: [bot.account.address, game] });
-              if (allowed < g.p.buyIn) await send(bot, sqk, token, "approve", [game, maxUint256]);
-              return send(bot, game, abi, "enter", [BigInt(id)]);
-            });
+            const plan = planFor(bot, id, Number(g.p.earliestStart) - now + 120, true);
+            if (plan.lateAt == null && now >= plan.enterAt) join(`join game #${id}`);
+          } else if (g.status === "Live" && !entered && bot.plans.get(id)?.lateAt != null) {
+            const plan = bot.plans.get(id);
+            if (plan.joinedAt || now < g.startTime + plan.lateAt) continue;
+            if (!(await pub.readContract({ address: game, abi, functionName: "lateEntryOpen", args: [BigInt(id)] }))) continue;
+            join(`jump on game #${id} late`);
           } else if (["Settled", "Voided", "RolledOver"].includes(g.status) && entered && !left && !claimed) {
             const owed = await pub.readContract({ address: game, abi, functionName: "claimable", args: [BigInt(id), bot.account.address] });
             if (owed > 0n) run(bot, `claim game #${id}`, () => send(bot, game, abi, "claim", [BigInt(id)]));
@@ -128,12 +140,14 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
       for (const bot of bots) {
         const plan = bot.plans.get(id) ?? planFor(bot, id, 0);
         if (plan.exitSent || bot.busy) continue;
-        if (pausedFor > plan.breakNerve || now - startTime > plan.maxStay) {
+        if (plan.lateAt != null && !plan.joinedAt) continue; // hasn't jumped on (yet)
+        if (pausedFor > plan.breakNerve || now - Math.max(startTime, plan.joinedAt ?? 0) > plan.maxStay) {
           plan.exitSent = true;
           run(bot, `get off game #${id}`, async () => {
             const e = await pub.readContract({ address: game, abi, functionName: "entries", args: [BigInt(id), bot.account.address] });
-            if (!e[0] || e[1] || e[4] > 0n || e[3] > BigInt(startTime)) return null; // not on the wheel
-            return send(bot, game, abi, "exit", [BigInt(id)]);
+            if (!e[0] || e[1] || e[4] > 0n) return null; // not on the wheel
+            // An entry that landed too late is refunded rather than on the wheel.
+            return send(bot, game, abi, "exit", [BigInt(id)]).catch((err) => { if (/LateEntry/.test(String(err.message))) return null; throw err; });
           });
         }
       }

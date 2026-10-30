@@ -4,7 +4,7 @@
 
 (The repository, the contract `SqueekChicken` and some internal names keep the game's working title, Squeekchain Chicken.)
 
-Everyone buys in with SQK while the lobby is open. The lobby closes the moment the hamster starts running, and you're on the wheel. Get off whenever you like: the longer you stay, the bigger your share. Once the wheel has been still for 3 minutes, the game ends at his last movement. Anyone still on, or who got off too late, is caught and gets nothing. When a game finishes, the next one opens automatically.
+Everyone buys in with SQK while the lobby is open. The game starts the moment the hamster starts running, and you're on the wheel; latecomers can still jump on for 2 minutes, until the first player gets off. Get off whenever you like: the longer you stay, the bigger your share. Once the wheel has been still for 3 minutes, the game ends at his last movement. Anyone still on, or who got off too late, is caught and gets nothing. As soon as a game ends, the next lobby opens.
 
 **Sepolia testnet only.** Testnet SQK has no value.
 
@@ -14,11 +14,12 @@ Everyone buys in with SQK while the lobby is open. The lobby closes the moment t
 |---|---|
 | Lobby | Always one open. Enter, or leave with an immediate refund, until Squeektoshi starts running |
 | Game starts | At his first movement once the lobby has been open at least **5 minutes** |
-| Late entries | An entry that lands after his first movement (before the watcher posts the start) is refunded |
-| Next game | Opens automatically as soon as the previous one finishes |
+| Late entries | Open for **2 minutes** after his first movement, until the **first player gets off**. A late player's time on the wheel counts from when they got on. An entry that lands after that (including in the same block as the first exit) is refunded |
+| Minimum players | Counted when the start is posted; too few voids the game and refunds everyone |
+| Next game | Its lobby opens as soon as the previous game's end is posted, without waiting for its payouts |
 | Game ends | When the wheel has been still for **3 minutes**, at his last movement |
 | Grace | Exits up to **12 s** (one Ethereum block) after his last movement still win |
-| Payout curve | Your weight is your **time on the wheel**, to the second: stay twice as long, earn twice the share. (Until 29 Oct 2026 it was +25% per 2 minutes, which was nearly flat in short runs, so bailing first often paid.) |
+| Payout curve | Your weight is your **time on the wheel**, to the second, from the start (or from when you got on, if you joined late): stay twice as long, earn twice the share. (Until 29 Oct 2026 it was +25% per 2 minutes, which was nearly flat in short runs, so bailing first often paid.) |
 | Jackpot | **20%** of the pot is shared by the **last 10%** of winners (at least one) |
 | Everyone else who got off in time | Shares the other 80% by weight |
 | Everyone caught | The pot rolls into the next game |
@@ -36,7 +37,7 @@ Squeekchain live feed ──► watcher ──► SqueekChicken contract ◄─�
                           serves the web app + log
 ```
 
-- **`contracts/SqueekChicken.sol`**: holds the buy-ins and pays out. The watcher can only post when the game started and when the hamster last moved, or void a game; it can't move money or pick winners. Optionally, `finalize` checks the watcher's end claim against Squeekchain's settled rounds (`SqueekCore`) before paying.
+- **`contracts/SqueekChicken.sol`**: holds the buy-ins and pays out. It sits behind a permanent proxy address (UUPS), so new rules can be added without moving to a new address; the owner can upgrade it only while no game is live or waiting for its payouts. The watcher can only post when the game started and when the hamster last moved, or void a game; it can't move money or pick winners. Optionally, `finalize` checks the watcher's end claim against Squeekchain's settled rounds (`SqueekCore`) before paying.
 - **`shared/rules.js`**: the game rules for reading the feed. The watcher uses them to decide, and the web app uses the same file to animate the hamster, so what players see matches what the watcher decides.
 - **`watcher/watcher.mjs`**: reads the feed every second, posts decisions, finalizes ended games, and serves the web app plus a public log at `/log`.
 - **`web/`**: the web app.
@@ -97,7 +98,15 @@ npx hardhat run scripts/deploy-test-token.js --network sepolia
 SQK_ADDRESS=<tSQK address> RECORD=sepolia-tsqk WATCHER_ADDRESS=<watcher address> npm run deploy:sepolia
 ```
 
-Point the watcher's `GAME_ADDRESS` at that game. The web app spots the test token and shows a **Get 1,000 tSQK** button to connected players. The watcher also runs 5 **test players** (`watcher/bots.mjs`; set `BOTS` to change how many, `0` for none): each has its own wallet derived from the watcher's key, mints its own tSQK, joins every game at a random moment in the lobby, gets off at a random moment (greedy, steady or jumpy, like the demo) and claims what it's owed. The watcher tops up their gas with 0.002 ETH when they run low. They never play with real SQK. The current one is in `deployments/sepolia-tsqk.json` (game `0x6F170b3CBF48fe6444e4d7b75812b30F33fCc7cC`, tSQK `0xD70d7248F309F3E33695b8582A2fE92DD8eDF233`); the real-SQK game in `deployments/sepolia.json` is still deployed.
+`deploy.js` deploys the game behind an upgradeable proxy and records both addresses (`address` is the proxy, the one to use everywhere). To change the contract later, upgrade it in place between games:
+
+```sh
+DEPLOYER_PRIVATE_KEY=<owner key> RECORD=sepolia-tsqk npx hardhat run scripts/upgrade.js --network sepolia
+```
+
+The upgrade checks that the new version keeps the storage layout (new fields may only be added at the end), and the contract refuses it while a game is live or waiting for its payouts.
+
+Point the watcher's `GAME_ADDRESS` at that game. The web app spots the test token and shows a **Get 1,000 tSQK** button to connected players. The watcher also runs 5 **test players** (`watcher/bots.mjs`; set `BOTS` to change how many, `0` for none): each has its own wallet derived from the watcher's key, mints its own tSQK, joins every game at a random moment in the lobby (about 1 in 5 times it jumps on late instead, after he starts), gets off at a random moment (greedy, steady or jumpy, like the demo) and claims what it's owed. The watcher tops up their gas with 0.002 ETH when they run low. They never play with real SQK. The current one is in `deployments/sepolia-tsqk.json` (game `0x6694d0F614D28d28b0718B7ac10FAa9650cb304E`, upgradeable, so this address stays; tSQK `0xD70d7248F309F3E33695b8582A2fE92DD8eDF233`); the real-SQK game in `deployments/sepolia.json` is still deployed.
 
 If a deploy fails with "insufficient funds", set `SEPOLIA_GAS_PRICE` (in wei, e.g. `50000000`): Sepolia's fees are tiny, but the default 1 gwei tip makes Hardhat ask for more ETH than a test wallet holds.
 
@@ -122,4 +131,4 @@ On testnet the watcher's key is stored as a hosting environment variable. That i
 
 ## Testnet admin powers
 
-The deployer (owner) can create games, change the watcher address and configure the settled-round check. The watcher can post starts and ends, and void games. Neither can take players' SQK: refunds and winnings are paid only by the contract's rules.
+The deployer (owner) can create games, change the watcher address, configure the settled-round check and **upgrade the contract** (between games only). The watcher can post starts and ends, and void games; it can't take players' SQK. The owner can't either under the current code, but an upgrade replaces the code, so on testnet players trust the owner not to upgrade to something that does. Before mainnet, the upgrade right should sit with a multisig behind a timelock (so any upgrade is public days before it takes effect), or be renounced.

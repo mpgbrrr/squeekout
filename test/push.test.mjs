@@ -38,11 +38,12 @@ test("tells players in the game they're on the wheel, and everyone else that a g
   await push.subscribe(sub(1, me));
   await push.subscribe(sub(2));
   sent.length = 0;
-  assert.equal(await push.gameStarted({ id: 7, players: ["0x" + "CD".repeat(20), "0x" + "11".repeat(20)] }), 2);
+  assert.equal(await push.gameStarted({ id: 7, players: ["0x" + "CD".repeat(20), "0x" + "11".repeat(20)], lateEntryWindow: 120 }), 2);
   const mine = sent.find((m) => m.to.endsWith("/1")), other = sent.find((m) => m.to.endsWith("/2"));
   assert.match(mine.title, /You're on the wheel/);
   assert.match(other.title, /Squeektoshi is running/);
   assert.equal(mine.tag, "squeekout-game-7");
+  assert.match(other.body, /Jump on in the next 2 min/);
 });
 
 test("forgets browsers that turned alerts off, and does nothing without keys", async () => {

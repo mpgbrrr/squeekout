@@ -4,26 +4,31 @@ pragma solidity 0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {ISqueekCore} from "./ISqueekCore.sol";
 
 /// @title SqueekChicken
-/// @notice A game of chicken on Squeektoshi's wheel. Players buy in with SQK while the lobby is open; the
-/// lobby closes when the hamster starts running. Once he runs, players exit whenever they like. The game
+/// @notice A game of chicken on Squeektoshi's wheel (Squeek Out). Players buy in with SQK while the lobby is
+/// open, and for the first `lateEntryWindow` seconds after the hamster starts running, until anyone gets off.
+/// Once he runs, players exit whenever they like. The game
 /// ends at his last movement once the wheel has been still for `idleWindow` seconds. Anyone still in, or
 /// who exited too late, is caught. Winners split the pot in proportion to how long they stayed on, and the last 10% of
-/// winners share a jackpot. When a game finishes, the watcher opens the next one.
+/// winners share a jackpot. Each player's time counts from when they got on. When a game's end is posted,
+/// the watcher opens the next one.
 /// @dev Testnet build. A watcher service reads Squeekchain's live feed and posts start, end and void
 /// decisions; it cannot move funds or choose winners. When enabled, `finalize` checks the watcher's end
-/// claim against SqueekCore's settled rounds before any payout.
-contract SqueekChicken is Ownable, ReentrancyGuard {
+/// claim against SqueekCore's settled rounds before any payout. Upgradeable (UUPS) by the owner, only while no
+/// game is running or waiting for its payouts. Upgrades may only append storage: never reorder or remove fields.
+contract SqueekChicken is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     enum Status {
         None,
         Lobby, // entries open until the hamster starts running (not before earliestStart)
-        Live, // start posted; entries closed
+        Live, // start posted; late entries open for lateEntryWindow seconds, until the first exit
         Ended, // end posted; waiting for finalize
         Settled, // payouts fixed; winners claim
         Voided, // everyone still entered claims their buy-in back
@@ -40,6 +45,7 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         uint128 bountyFlat; // SQK paid to whoever calls finalize, capped at 1% of the pot
         uint16 minPlayers; // fewer players in at the start voids the game
         uint16 maxPlayers;
+        uint32 lateEntryWindow; // seconds after the start that entries stay open, until the first exit (agreed: 120)
     }
 
     struct Game {
@@ -55,20 +61,21 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         uint256 sumWeights;
         uint256 jackpotEach;
         uint64 jackpotFromTime; // winners who exited at or after this time share the jackpot
+        uint64 firstExitTime; // the first in-game exit, which closes late entries (0 until then)
     }
 
     struct Entry {
         bool entered;
         bool left; // left during the lobby and was refunded
         bool claimed;
-        uint64 enteredAt; // entries after the start are late and refunded
+        uint64 enteredAt; // late entries count if within lateEntryWindow and before the first exit
         uint64 exitTime; // 0 while still in
     }
 
     uint256 public constant BOUNTY_CAP_BPS = 100; // 1% of the pot
     uint256 public constant BACKSTOP_DELAY = 7 days;
 
-    IERC20 public immutable sqk;
+    IERC20 public sqk;
     address public watcher;
 
     ISqueekCore public squeekCore;
@@ -119,10 +126,30 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         _;
     }
 
-    constructor(IERC20 sqk_, address watcher_) Ownable(msg.sender) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(IERC20 sqk_, address watcher_, address owner_) external initializer {
+        __Ownable_init(owner_);
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
         sqk = sqk_;
         watcher = watcher_;
         emit WatcherSet(watcher_);
+    }
+
+    function version() public pure virtual returns (string memory) {
+        return "1";
+    }
+
+    /// @dev Upgrades only between games: never while a game is running or waiting for its payouts.
+    function _authorizeUpgrade(address) internal view override onlyOwner {
+        for (uint256 id = gameCount; id > 0 && id + 5 > gameCount; id--) {
+            Status s = games[id].status;
+            if (s == Status.Live || s == Status.Ended) revert GameInProgress();
+        }
     }
 
     // ------------------------------------------------------------------ admin (testnet)
@@ -157,11 +184,12 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         return _create(p);
     }
 
-    /// @notice Opens the next game with the default rules once the latest game has finished.
+    /// @notice Opens the next game with the default rules once the latest game has ended (its end is posted,
+    /// even if its payouts are still waiting for settled rounds), so his next run isn't missed.
     function openNextGame() external onlyWatcher returns (uint256 id) {
         if (gameCount > 0) {
             Status s = games[gameCount].status;
-            if (s != Status.Settled && s != Status.Voided && s != Status.RolledOver) revert GameInProgress();
+            if (s == Status.Lobby || s == Status.Live) revert GameInProgress();
         }
         Params memory p = defaults;
         if (p.buyIn == 0) revert BadParams();
@@ -171,18 +199,22 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
 
     // ------------------------------------------------------------------ players
 
-    /// @notice Buy in. Open until the game starts; an entry that lands after the hamster's first movement
-    /// (before the watcher has posted it) is refunded.
+    /// @notice Buy in. Open in the lobby, and after the start for `lateEntryWindow` seconds until the first exit.
+    /// An entry that lands too late (for example before the watcher has posted the start) is refunded.
+    /// A player who left the lobby can join again.
     function enter(uint256 id) public nonReentrant {
         Game storage g = games[id];
-        if (g.status != Status.Lobby) revert WrongStatus(g.status);
+        if (g.status != Status.Lobby && !(g.status == Status.Live && _lateEntryOpen(g))) revert WrongStatus(g.status);
         Entry storage e = entries[id][msg.sender];
-        if (e.entered) revert AlreadyEntered();
+        bool rejoin = e.left; // keeps their one place in the player list
+        if (e.entered && !rejoin) revert AlreadyEntered();
         if (g.entrants >= g.p.maxPlayers) revert GameFull();
         e.entered = true;
+        e.left = false;
+        e.claimed = false;
         e.enteredAt = uint64(block.timestamp);
         g.entrants += 1;
-        players[id].push(msg.sender);
+        if (!rejoin) players[id].push(msg.sender);
         sqk.safeTransferFrom(msg.sender, address(this), g.p.buyIn);
         emit Entered(id, msg.sender);
     }
@@ -214,8 +246,9 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         Entry storage e = entries[id][msg.sender];
         if (!e.entered || e.left) revert NotEntered();
         if (e.exitTime != 0) revert AlreadyExited();
-        if (g.status == Status.Live && e.enteredAt > g.startTime) revert LateEntry();
+        if (g.status == Status.Live && !_inPotEntry(g, e)) revert LateEntry();
         e.exitTime = uint64(block.timestamp);
+        if (g.status == Status.Live && g.firstExitTime == 0) g.firstExitTime = e.exitTime;
         exitOrder[id].push(msg.sender);
         emit Exited(id, msg.sender, e.exitTime);
     }
@@ -236,7 +269,13 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         if (g.status != Status.Lobby) revert WrongStatus(g.status);
         if (startTime < g.p.earliestStart || startTime > block.timestamp) revert BadTime();
         g.startTime = startTime;
-        if (_inAtStart(id, g) < g.p.minPlayers) {
+        // Exits that landed between his first movement and this post already closed late entries.
+        address[] storage order = exitOrder[id];
+        for (uint256 i = 0; i < order.length; i++) {
+            uint64 t = entries[id][order[i]].exitTime;
+            if (t >= startTime) { g.firstExitTime = t; break; }
+        }
+        if (_inPot(id, g) < g.p.minPlayers) {
             _void(id, g, "not enough players");
             return;
         }
@@ -287,7 +326,7 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
             }
         }
 
-        uint256 pot = uint256(g.p.buyIn) * _inAtStart(id, g) + g.rolloverIn;
+        uint256 pot = uint256(g.p.buyIn) * _inPot(id, g) + g.rolloverIn;
         uint256 bounty = g.p.bountyFlat;
         uint256 cap = (pot * BOUNTY_CAP_BPS) / 10_000;
         if (bounty > cap) bounty = cap;
@@ -329,24 +368,32 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         if (!e.entered || e.left || e.claimed) return 0;
         if (g.status == Status.Voided) return g.p.buyIn;
         bool started = g.status >= Status.Live;
-        // Late entries and exits before the start are refunded.
-        if (started && (e.enteredAt > g.startTime || (e.exitTime != 0 && e.exitTime < g.startTime))) return g.p.buyIn;
+        // Entries that landed too late, and exits before the start, are refunded.
+        if (started && !_inPotEntry(g, e)) return g.p.buyIn;
         if (g.status != Status.Settled) return 0;
         if (e.exitTime == 0 || e.exitTime > uint256(g.lastMove) + g.p.grace) return 0; // caught
-        uint256 amount = (g.curvePool * weight(g, e.exitTime)) / g.sumWeights;
+        uint256 amount = (g.curvePool * weight(g, e)) / g.sumWeights;
         if (e.exitTime >= g.jackpotFromTime) amount += g.jackpotEach;
         return amount;
     }
 
-    /// @notice Weight of an exit: the seconds the player stayed on the wheel (at least 1), so each winner's
-    /// share of the curve pool is in proportion to their time on the wheel.
-    function weight(Game storage g, uint64 exitTime) internal view returns (uint256) {
-        uint256 s = exitTime > g.startTime ? exitTime - g.startTime : 0;
+    /// @notice Weight of an exit: the seconds the player stayed on the wheel (at least 1), counted from the
+    /// start or from when they got on if they joined late, so each winner's share of the curve pool is in
+    /// proportion to their own time on the wheel.
+    function weight(Game storage g, Entry storage e) internal view returns (uint256) {
+        uint256 from = e.enteredAt > g.startTime ? e.enteredAt : g.startTime;
+        uint256 s = e.exitTime > from ? e.exitTime - from : 0;
         return s == 0 ? 1 : s;
     }
 
-    function weightAt(uint256 id, uint64 exitTime) external view returns (uint256) {
-        return weight(games[id], exitTime);
+    function weightOf(uint256 id, address player) external view returns (uint256) {
+        return weight(games[id], entries[id][player]);
+    }
+
+    /// @notice Whether players can still join game `id` after its start.
+    function lateEntryOpen(uint256 id) external view returns (bool) {
+        Game storage g = games[id];
+        return g.status == Status.Live && _lateEntryOpen(g);
     }
 
     // ------------------------------------------------------------------ internal
@@ -369,28 +416,35 @@ contract SqueekChicken is Ownable, ReentrancyGuard {
         emit GameCreated(id, p, g.rolloverIn);
     }
 
-    /// @dev Players in the pot: entered by the start, didn't leave, and didn't exit before the start.
-    function _inAtStart(uint256 id, Game storage g) internal view returns (uint256 n) {
-        address[] storage ps = players[id];
-        for (uint256 i = 0; i < ps.length; i++) {
-            Entry storage e = entries[id][ps[i]];
-            if (e.left || e.enteredAt > g.startTime) continue;
-            if (e.exitTime != 0 && e.exitTime < g.startTime) continue;
-            n++;
-        }
+    function _lateEntryOpen(Game storage g) internal view returns (bool) {
+        return g.firstExitTime == 0 && block.timestamp <= uint256(g.startTime) + g.p.lateEntryWindow;
     }
 
-    /// @dev Winners' exit times in exit order: in-game exits up to the grace cutoff, skipping late entries.
+    /// @dev In the pot: didn't leave the lobby or get off before the start, and got on by the start, or late
+    /// but within lateEntryWindow and before the first exit (an entry in the same block as it is too late).
+    function _inPotEntry(Game storage g, Entry storage e) internal view returns (bool) {
+        if (!e.entered || e.left) return false;
+        if (e.exitTime != 0 && e.exitTime < g.startTime) return false;
+        if (e.enteredAt <= g.startTime) return true;
+        return e.enteredAt <= uint256(g.startTime) + g.p.lateEntryWindow && (g.firstExitTime == 0 || e.enteredAt < g.firstExitTime);
+    }
+
+    function _inPot(uint256 id, Game storage g) internal view returns (uint256 n) {
+        address[] storage ps = players[id];
+        for (uint256 i = 0; i < ps.length; i++) if (_inPotEntry(g, entries[id][ps[i]])) n++;
+    }
+
+    /// @dev Winners' exit times in exit order: in-game exits up to the grace cutoff, skipping refunded entries.
     function _winners(uint256 id, Game storage g) internal view returns (uint64[] memory times, uint256 n, uint256 sumW) {
         address[] storage order = exitOrder[id];
         times = new uint64[](order.length);
         uint256 cutoff = uint256(g.lastMove) + g.p.grace;
         for (uint256 i = 0; i < order.length; i++) {
             Entry storage e = entries[id][order[i]];
-            if (e.enteredAt > g.startTime || e.exitTime < g.startTime) continue;
+            if (!_inPotEntry(g, e)) continue;
             if (e.exitTime > cutoff) break; // exits are in time order, so everyone after is caught too
             times[n++] = e.exitTime;
-            sumW += weight(g, e.exitTime);
+            sumW += weight(g, e);
         }
     }
 

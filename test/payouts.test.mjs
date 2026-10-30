@@ -22,7 +22,27 @@ test("matches the contract's payouts", () => {
   assert.equal(r.payouts.has("c"), false);
 });
 
+test("matches the contract's payouts with a late entry, weighted from its own join time", () => {
+  // 4 players at 100 (one joined 50 s in); exits at +80 s and +100 s; 4 SQK bounty. Net 396: jackpot 79.2 to
+  // the last winner; curve pool 316.8 split 80 : 50 (the late player was on from +50 s to +100 s).
+  const r = settle({ buyIn: 100, inPot: 4, exits: [{ id: "a", t: 80 }, { id: "late", t: 100, from: 50 }], lastMove: 110 });
+  close(r.payouts.get("a").total, (316.8 * 80) / 130, 1e-9);
+  close(r.payouts.get("late").total, (316.8 * 50) / 130 + 79.2, 1e-9);
+});
+
 test("an exit 13 s after the last movement is caught, and everyone caught rolls over", () => {
   const r = settle({ buyIn: 100, inPot: 2, exits: [{ id: "a", t: 103 }], lastMove: 90 });
   assert.equal(r.rolledOver, true);
+});
+
+test("counts late entries in the pot the way the contract does", async () => {
+  const { countsInPot } = await import("../shared/payouts.js");
+  const g = { startTime: 1000, lateEntryWindow: 120, firstExitTime: 0 };
+  assert.equal(countsInPot({ enteredAt: 900, exitTime: 0 }, g), true);
+  assert.equal(countsInPot({ enteredAt: 1120, exitTime: 0 }, g), true); // the last second of the window
+  assert.equal(countsInPot({ enteredAt: 1121, exitTime: 0 }, g), false);
+  assert.equal(countsInPot({ enteredAt: 1050, exitTime: 0 }, { ...g, firstExitTime: 1050 }), false); // same block as the first exit
+  assert.equal(countsInPot({ enteredAt: 1049, exitTime: 0 }, { ...g, firstExitTime: 1050 }), true);
+  assert.equal(countsInPot({ enteredAt: 900, exitTime: 950 }, g), false); // got off before the start: refunded
+  assert.equal(countsInPot({ enteredAt: 900, exitTime: 0, left: true }, g), false);
 });

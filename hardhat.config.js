@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("@openzeppelin/hardhat-upgrades");
 
 // Deployment settings come from the environment; nothing secret lives in this repo.
 const { SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, SEPOLIA_GAS_PRICE } = process.env;

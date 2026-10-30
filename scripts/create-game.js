@@ -27,6 +27,7 @@ async function main() {
     bountyFlat: ethers.parseEther(env.BOUNTY || "5"),
     minPlayers: Number(env.MIN_PLAYERS || 2),
     maxPlayers: 200,
+    lateEntryWindow: 120, // entries stay open 2 minutes after the start, until the first exit
   };
   const game = await ethers.getContractAt("SqueekChicken", address);
   const tx = await game.createGame(params);

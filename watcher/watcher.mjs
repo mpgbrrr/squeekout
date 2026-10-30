@@ -126,7 +126,7 @@ async function alertStart(id) {
       pub.readContract({ address: GAME, abi, functionName: "getPlayers", args: [BigInt(id)] }),
     ]);
     if (Number(g.entrants) < Number(g.p.minPlayers)) return;
-    const sent = await push.gameStarted({ id, players });
+    const sent = await push.gameStarted({ id, players, lateEntryWindow: Number(g.p.lateEntryWindow ?? 0) });
     log("start_alerts_sent", { game: id, sent, subscribers: push.count });
   } catch (e) {
     log("start_alerts_failed", { game: id, error: String(e.shortMessage || e.message || e) });
@@ -245,13 +245,13 @@ async function tryFinalize(id) {
   }
 }
 
-// Keeps a game always open: when the latest game has finished (or there is none), open the next one
-// with the contract's default rules. A no-op until the owner has set those defaults.
+// Keeps a game always open: once the latest game's end is posted (or there is none), open the next one with
+// the contract's default rules, without waiting for its payouts. A no-op until the owner has set those defaults.
 async function openNextIfIdle() {
   const count = Number(await pub.readContract({ address: GAME, abi, functionName: "gameCount" }));
   if (count > 0) {
     const g = await pub.readContract({ address: GAME, abi, functionName: "getGame", args: [BigInt(count)] });
-    if (!["Settled", "Voided", "RolledOver"].includes(Status[Number(g.status)])) return;
+    if (!["Ended", "Settled", "Voided", "RolledOver"].includes(Status[Number(g.status)])) return;
   }
   const defaults = await pub.readContract({ address: GAME, abi, functionName: "defaults" });
   if (!defaults[0]) return; // buyIn 0: defaults not set yet
@@ -268,18 +268,20 @@ async function openNextIfIdle() {
 // After a redeploy, a lobby left open on an earlier contract would wait 7 days for its backstop. Void it, so
 // everyone in it can claim their buy-in back right away. Live or ended games there are left alone.
 const retired = new Set();
-// Game layouts of earlier contract versions, newest first: the first contracts (to 29 Oct 2026) had a
-// curveStep in Params. A layout fits when it decodes to a known status.
+// Game layouts of earlier contract versions, newest first. The contract of 29–30 Oct 2026 had no late entries
+// (no lateEntryWindow or firstExitTime); the first ones had a curveStep in Params. A layout fits when it
+// decodes to a known status.
 const p = (extra) => ({ type: "tuple", name: "p", components: [
   { name: "buyIn", type: "uint128" }, { name: "earliestStart", type: "uint64" }, { name: "idleWindow", type: "uint32" },
   { name: "grace", type: "uint32" }, ...extra, { name: "jackpotBps", type: "uint16" }, { name: "jackpotGroupBps", type: "uint16" },
   { name: "bountyFlat", type: "uint128" }, { name: "minPlayers", type: "uint16" }, { name: "maxPlayers", type: "uint16" }] });
-const OLD_GET_GAME = [{ type: "function", name: "getGame", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "tuple", components: [
-  p([{ name: "curveStep", type: "uint32" }]), { name: "status", type: "uint8" }, { name: "startTime", type: "uint64" }, { name: "lastMove", type: "uint64" },
+const oldGetGame = (params) => [{ type: "function", name: "getGame", stateMutability: "view", inputs: [{ type: "uint256" }], outputs: [{ type: "tuple", components: [
+  params, { name: "status", type: "uint8" }, { name: "startTime", type: "uint64" }, { name: "lastMove", type: "uint64" },
   { name: "endCounter", type: "uint64" }, { name: "entrants", type: "uint32" }, { name: "rolloverIn", type: "uint256" }, { name: "curvePool", type: "uint256" },
   { name: "sumWeights", type: "uint256" }, { name: "jackpotEach", type: "uint256" }, { name: "jackpotFromTime", type: "uint64" }] }] }];
+const OLD_LAYOUTS = [oldGetGame(p([])), oldGetGame(p([{ name: "curveStep", type: "uint32" }]))];
 async function previousGameStatus(address, id) {
-  for (const layout of [abi, OLD_GET_GAME]) {
+  for (const layout of [abi, ...OLD_LAYOUTS]) {
     const g = await pub.readContract({ address, abi: layout, functionName: "getGame", args: [id] }).catch(() => null);
     if (g && Status[Number(g.status)]) return Status[Number(g.status)];
   }

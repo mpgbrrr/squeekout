@@ -2,7 +2,7 @@
 import { createPublicClient, createWalletClient, custom, http, formatUnits, parseAbi } from "https://esm.sh/viem@2.21.55";
 import { hardhat, sepolia } from "https://esm.sh/viem@2.21.55/chains";
 import { DEFAULTS, display, newGameState, readingFromStatus, step } from "/shared/rules.js";
-import { settle } from "/shared/payouts.js";
+import { countsInPot, settle } from "/shared/payouts.js";
 import { createHamster } from "/hamster.mjs";
 import { createDemo } from "/demo.mjs";
 import { signPermit } from "/permit.mjs";
@@ -221,10 +221,12 @@ function alertStart(g) {
   if (demo || !g || startAlerted.has(g.id)) return;
   startAlerted.add(g.id);
   const mine = me && g.players.some((p) => p.addr.toLowerCase() === me.toLowerCase() && !p.entry.left);
-  showAlertBanner(mine ? `🐹 He's running! You're on the wheel in game #${g.id}` : `🐹 He's running! Game #${g.id} is on`);
+  const lateWindow = Number(g.p.lateEntryWindow ?? 0);
+  const join = lateWindow ? ` Jump on in the next ${Math.round(lateWindow / 60) || 1} min, before anyone gets off.` : "";
+  showAlertBanner(mine ? `🐹 He's running! You're on the wheel in game #${g.id}` : `🐹 He's running! Game #${g.id} is on.${join}`);
   alerts.ring({
     title: mine ? "You're on the wheel!" : "Squeektoshi is running!",
-    body: mine ? `Game #${g.id} is live. Get off before he stops.` : `Game #${g.id} just started.`,
+    body: mine ? `Game #${g.id} is live. Get off before he stops.` : `Game #${g.id} just started.${join}`,
     tag: `squeekout-game-${g.id}`, // same as the watcher's push, so a phone shows one notification
   });
 }
@@ -299,18 +301,29 @@ async function loadGame() {
   render();
 }
 
+// The contract's in-pot rule for a game read from chain (entries are refunded if they don't count).
+const potRules = (g) => ({ startTime: Number(g.startTime), lateEntryWindow: Number(g.p.lateEntryWindow ?? 0), firstExitTime: Number(g.firstExitTime ?? 0) });
+const entryTimes = (e) => ({ entered: e.entered, left: e.left, enteredAt: Number(e.enteredAt), exitTime: Number(e.exitTime) });
+// Seconds late entries stay open in a live game (they also close at the first exit), or null when closed.
+function lateEntryLeft(g, now) {
+  if (!g || Status[Number(g.status)] !== "Live" || Number(g.firstExitTime ?? 0)) return null;
+  const left = Number(g.startTime) + Number(g.p.lateEntryWindow ?? 0) - now;
+  return left >= 0 ? left : null;
+}
+
 function render() {
   if (demo) return;
   const g = game, status = Status[Number(g.status)], now = Math.floor(Date.now() / 1000);
   const lobby = status === "Lobby";
   const started = ["Live", "Ended", "Settled", "RolledOver"].includes(status);
   const start = Number(g.startTime);
-  const late = (e) => started && Number(e.enteredAt) > start;
+  const late = (e) => started && Number(e.enteredAt) > start && !countsInPot(entryTimes(e), potRules(g)); // joined too late: refunded
+  const lateLeft = lateEntryLeft(g, now);
   const leftEarly = (e) => started && Number(e.exitTime) && Number(e.exitTime) < start;
   $("gameTitle").textContent = `Game #${g.id}`;
   $("gameStatus").textContent = {
-    Lobby: "Lobby open: entries close when Squeektoshi starts running",
-    Live: "Live: the wheel is turning", Ended: "Game over: finalizing payouts", Settled: "Paid out",
+    Lobby: "Lobby open: the game starts when Squeektoshi runs",
+    Live: lateLeft != null ? `Live: late entries open for ${mmss(lateLeft)}, or until someone gets off` : "Live: the wheel is turning", Ended: "Game over: finalizing payouts", Settled: "Paid out",
     Voided: "Voided: everyone refunded", RolledOver: "Everyone caught: pot rolled over",
   }[status];
   const inPot = g.players.filter((p) => !p.entry.left && !late(p.entry) && !leftEarly(p.entry)).length;
@@ -328,10 +341,11 @@ function render() {
   const over = ["Ended", "Settled", "RolledOver"].includes(status); // he has stopped: anyone still on was caught
   $("players").innerHTML = g.players.length ? g.players.map((p) => {
     const e = p.entry;
-    const off = e.left ? "left the lobby" : late(e) ? "joined after the start (refunded)" : leftEarly(e) ? "left before the start (refunded)"
-      : Number(e.exitTime) ? (start ? `+${mmss(Math.max(0, Number(e.exitTime) - start))}` : clock(Number(e.exitTime)))
+    const joinedLate = started && Number(e.enteredAt) > start ? ` · joined +${mmss(Number(e.enteredAt) - start)}` : "";
+    const off = e.left ? "left the lobby" : late(e) ? "joined too late (refunded)" : leftEarly(e) ? "left before the start (refunded)"
+      : (Number(e.exitTime) ? (start ? `+${mmss(Math.max(0, Number(e.exitTime) - start))}` : clock(Number(e.exitTime)))
         + (over && Number(e.exitTime) > Number(g.lastMove) + Number(g.p.grace) ? " · too late" : "")
-      : over ? "never got off" : "still on";
+      : over ? "never got off" : "still on") + joinedLate;
     const pay = e.claimed ? "claimed" : p.claimable > 0n ? sqk(p.claimable) : settled || status === "RolledOver" ? "Caught" : "—";
     return `<tr><td>${escapeHtml(playerName(p.addr))}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="muted">No players yet.</td></tr>`;
@@ -351,7 +365,12 @@ function render() {
     const tooLate = lastMove && x > lastMove + Number(g.p.grace);
     if (x && start && x >= start) events.push({ t: x, text: `${who(p)} got off${tooLate ? " too late" : ""}`, kind: tooLate ? "bad" : "off" });
   }
-  if (start) events.push({ t: start, text: "Game on! Entries closed", kind: "ham" });
+  const lateWindow = Number(g.p.lateEntryWindow ?? 0);
+  if (start) events.push({ t: start, text: lateWindow ? `Game on! Late entries open ${mmss(lateWindow)}, until someone gets off` : "Game on! Entries closed", kind: "ham" });
+  if (start && lateWindow && lateLeft == null && status !== "Voided") {
+    const closedAt = Number(g.firstExitTime) || start + lateWindow;
+    if (closedAt <= now) events.push({ t: closedAt + 0.5, text: "Entries closed", kind: "ham" });
+  }
   if (lastMove) events.push(gameOver(events, lastMove - start, caught));
   if (status === "Voided") events.push({ t: now, text: "Game voided: everyone refunded", kind: "bad" });
   renderHud(hudCount, lobby ? null : inPot, hudLabel, events, (t) => (start && t >= start ? `+${mmss(t - start)}` : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
@@ -372,6 +391,9 @@ function render() {
   } else if (lobby && (!mine || mine.entry.left)) {
     btn.textContent = `Enter for ${sqk(g.p.buyIn)}`; btn.onclick = () => enter(g);
     $("youStatus").textContent = "Buy in before Squeektoshi starts running. Then get off the wheel before he stops: the longer you stay, the more you win.";
+  } else if (lateLeft != null && (!mine || mine.entry.left)) {
+    btn.textContent = `Jump on for ${sqk(g.p.buyIn)}`; btn.onclick = () => enter(g);
+    $("youStatus").textContent = `He's running! Late entries are open for ${mmss(lateLeft)} more, or until someone gets off. Your time on the wheel counts from when you get on.`;
   } else if (inLobby) {
     btn.textContent = "You're in"; btn.disabled = true;
     $("youStatus").textContent = now < earliest
@@ -384,6 +406,7 @@ function render() {
     btn.textContent = mine ? (Number(mine.entry.exitTime) ? "You got off" : "Caught on the wheel") : "Watching";
     btn.disabled = true;
     $("youStatus").textContent = mine ? (settled && !mine.claimable && !mine.entry.claimed ? "You were still on when he stopped." : "Waiting for the game to finish.")
+      : status === "Live" ? "Entries for this game have closed. The next lobby opens as soon as he stops."
       : "A new game opens as soon as this one finishes.";
   }
 }
@@ -465,12 +488,11 @@ function celebrateLive(lastMove) {
   if (demo || !g || !lastMove || celebrated.has(g.id) || !Number(g.startTime)) return;
   if (!["Live", "Ended", "Settled", "RolledOver"].includes(Status[Number(g.status)])) return;
   const start = Number(g.startTime);
-  const inGame = g.players.filter((p) => !p.entry.left && Number(p.entry.enteredAt) <= start
-    && !(Number(p.entry.exitTime) && Number(p.entry.exitTime) < start));
+  const inGame = g.players.filter((p) => countsInPot(entryTimes(p.entry), potRules(g)));
   if (!inGame.length) return;
   celebrated.add(g.id);
   const exits = inGame.filter((p) => Number(p.entry.exitTime)).sort((a, b) => Number(a.entry.exitTime) - Number(b.entry.exitTime))
-    .map((p) => ({ id: p.addr.toLowerCase(), t: Number(p.entry.exitTime) - start }));
+    .map((p) => ({ id: p.addr.toLowerCase(), t: Number(p.entry.exitTime) - start, from: Math.max(0, Number(p.entry.enteredAt) - start) }));
   const r = settle({ buyIn: Number(formatUnits(g.p.buyIn, 18)), inPot: inGame.length, rollover: Number(formatUnits(g.rolloverIn, 18)), exits, lastMove: lastMove - start });
   const isMe = (p) => me && p.addr.toLowerCase() === me.toLowerCase();
   const name = (p) => (isMe(p) ? "You" : playerName(p.addr));
@@ -579,7 +601,8 @@ function renderDemo() {
   if (s.phase !== "lobby") demoMoments.update(view.mode, s.t);
   const stillOn = players.filter((p) => p.exit == null).length;
   const events = [...demoMoments.list];
-  if (s.start != null) events.push({ t: s.start, text: "Game on! Entries closed", kind: "ham" });
+  if (s.start != null) events.push({ t: s.start, text: `Game on! Late entries open ${mmss(demo.lateWindow)}, until someone gets off`, kind: "ham" });
+  for (const p of players) if (p.from > 0) events.push({ t: s.start + p.from, text: `${p.name} jumped on late` });
   for (const p of players) {
     if (p.exit == null) continue;
     const tooLate = s.result && !s.result.payouts.has(p.id);
@@ -591,7 +614,9 @@ function renderDemo() {
     events, (t) => (s.start != null && t >= s.start ? `+${mmss(t - s.start)}` : "lobby"));
 
   $("gameTitle").textContent = "Demo game";
-  $("gameStatus").textContent = { lobby: "Lobby open: entries close when he starts running", live: "Live: the wheel is turning", ended: "Game over" }[s.phase];
+  const lateLeft = demo.lateEntryLeft();
+  $("gameStatus").textContent = { lobby: "Lobby open until he runs, then 2 more minutes until someone gets off",
+    live: lateLeft != null ? `Live: late entries open for ${mmss(lateLeft)}, or until someone gets off` : "Live: the wheel is turning", ended: "Game over" }[s.phase];
   $("fBuyIn").textContent = demoSqk(demo.buyIn);
   $("fPot").textContent = demoSqk(demo.buyIn * players.length);
   $("fPlayers").textContent = String(players.length);
@@ -603,7 +628,8 @@ function renderDemo() {
   // Who got off first at the top, then anyone on their way off, then everyone still on.
   const order = (p) => (p.exit != null ? p.exit : p.landsAt != null ? 1e9 : 2e9);
   $("players").innerHTML = [...players].sort((a, b) => order(a) - order(b)).map((p) => {
-    const off = p.exit != null ? since(p.exit) : p.landsAt != null ? (s.phase === "ended" ? "too late" : "getting off…") : s.phase === "ended" ? "never got off" : "still on";
+    const off = (p.exit != null ? since(p.exit) : p.landsAt != null ? (s.phase === "ended" ? "too late" : "getting off…") : s.phase === "ended" ? "never got off" : "still on")
+      + (p.from > 0 ? ` · joined ${since(p.from)}` : "");
     const pay = s.phase !== "ended" ? "—" : payout(p) ? demoSqk(payout(p)) : "caught";
     return `<tr><td>${p.name}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("");

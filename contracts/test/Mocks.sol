@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import {ISqueekCore} from "../ISqueekCore.sol";
+import {SqueekChicken} from "../SqueekChicken.sol";
 
 /// @notice Stand-in for SQK in tests: a plain ERC-20 with permit, like the real token.
 contract MockSQK is ERC20, ERC20Permit {
@@ -44,5 +45,13 @@ contract MockSqueekCore {
     function roundPage(uint64, uint64 throughRound, uint256) external view returns (ISqueekCore.RoundPage memory p) {
         p.certifiedThroughRound = throughRound;
         p.end.cumulativeWork = workAfter[throughRound];
+    }
+}
+
+/// @notice A stand-in next version of the game, for upgrade tests: same storage, one new function.
+/// @custom:oz-upgrades-from SqueekChicken
+contract SqueekChickenV2Mock is SqueekChicken {
+    function version() public pure override returns (string memory) {
+        return "2";
     }
 }

@@ -4,6 +4,7 @@ import { createPublicClient, http, formatUnits, parseAbi } from "https://esm.sh/
 import { hardhat, sepolia } from "https://esm.sh/viem@2.21.55/chains";
 import { createNames, escapeHtml } from "/names.mjs";
 import { quietAddress } from "/wallet.mjs";
+import { countsInPot } from "/shared/payouts.js";
 
 const $ = (id) => document.getElementById(id);
 const cfg = await (await fetch("/config.json")).json();
@@ -54,7 +55,7 @@ async function load(fromId, toId) {
   const winners = loaded.flatMap((game) => Status[game.g.status] !== "Settled" ? [] : game.players
     .filter((p) => inPot(game, p) && p.exitTime && p.exitTime <= Number(game.g.lastMove) + game.g.p.grace)
     .map((p) => ({ game, p })));
-  const weights = await many(winners.map(({ game, p }) => ({ address: GAME, abi, functionName: "weightAt", args: [game.id, BigInt(p.exitTime)] })));
+  const weights = await many(winners.map(({ game, p }) => ({ address: GAME, abi, functionName: "weightOf", args: [game.id, p.addr] })));
   winners.forEach(({ game, p }, i) => {
     p.payout = (game.g.curvePool * weights[i]) / game.g.sumWeights;
     if (BigInt(p.exitTime) >= game.g.jackpotFromTime) { p.payout += game.g.jackpotEach; p.jackpot = true; }
@@ -62,11 +63,13 @@ async function load(fromId, toId) {
   games.push(...loaded);
 }
 
-// In the pot: joined before the start and didn't leave the lobby or get off before the start.
-function inPot(game, p) {
-  const start = Number(game.g.startTime);
-  return p.entered && !p.left && (!start || (p.enteredAt <= start && !(p.exitTime && p.exitTime < start)));
+// In the pot, as the contract decides: in by the start (or late, within the window and before the first exit),
+// and didn't leave the lobby or get off before the start.
+function inPot({ g }, p) {
+  return countsInPot(p, { startTime: Number(g.startTime), lateEntryWindow: Number(g.p.lateEntryWindow ?? 0), firstExitTime: Number(g.firstExitTime ?? 0) });
 }
+// "joined +0:45" for players who got on after the start.
+const joined = (p, start) => (start && p.enteredAt > start ? `<small>joined +${mmss(p.enteredAt - start)}</small>` : "");
 
 const LABEL = {
   Lobby: ["Lobby open", "live"], Live: ["Live now", "live"], Ended: ["Finalizing", "live"],
@@ -92,10 +95,10 @@ function card({ id, g, players }) {
     const medal = (i) => ["🥇", "🥈", "🥉"][i] ?? `#${i + 1}`;
     // Three columns so the payout fits on a phone: the medal sits with the name.
     body = `<table class="results"><thead><tr><th>Player</th><th>Got off</th><th>Payout</th></tr></thead><tbody>${
-      won.map((p, i) => `<tr${youCls(p)}><td class="who"><span class="medal">${medal(i)}</span>${name(p)}</td><td>+${mmss(p.exitTime - start)}</td>`
+      won.map((p, i) => `<tr${youCls(p)}><td class="who"><span class="medal">${medal(i)}</span>${name(p)}</td><td>+${mmss(p.exitTime - start)}${joined(p, start)}</td>`
         + `<td class="pay">${amount(p.payout)}${p.jackpot ? '<span class="tag">JACKPOT</span>' : ""}</td></tr>`).join("")
     }${caught.map((p) => `<tr${youCls(p)}><td class="who"><span class="medal"></span>${name(p)}</td>`
-      + `<td>${p.exitTime ? `+${mmss(p.exitTime - start)}<small>too late</small>` : "<small>never got off</small>"}</td><td class="pay caught">Caught</td></tr>`).join("")
+      + `<td>${p.exitTime ? `+${mmss(p.exitTime - start)}<small>too late</small>` : "<small>never got off</small>"}${joined(p, start)}</td><td class="pay caught">Caught</td></tr>`).join("")
     }</tbody></table>`;
   } else if (status === "RolledOver") {
     body = `<p class="muted">Everyone was still on the wheel when he stopped, so the pot rolled into the next game. Caught: ${

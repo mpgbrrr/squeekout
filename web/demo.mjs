@@ -19,22 +19,25 @@ function hamsterPlan() {
   return plan;
 }
 
-export function createDemo({ buyIn = 100, lobbySecs = 20 } = {}) {
+export function createDemo({ buyIn = 100, lobbySecs = 20, lateWindow = 120 } = {}) {
   const plan = hamsterPlan();
   const players = [
-    { id: "you", name: "You", you: true, exit: null, landsAt: null },
+    { id: "you", name: "You", you: true, exit: null, landsAt: null, on: true, from: 0 },
     ...BOTS.map((name, i) => {
       const style = i < 2 ? "greedy" : i < 6 ? "steady" : "jumpy";
       return {
         id: `bot${i}`, name, style, exit: null, landsAt: null,
+        // Some see him running and jump on late: in only if they land within the window and before anyone gets off.
+        lateAt: Math.random() < 0.2 ? rand(10, lateWindow - 5) : null, on: false, from: 0,
         // How long a break they'll sit through, and how long they'll stay on at most.
         breakNerve: style === "jumpy" ? rand(8, 40) : style === "steady" ? rand(40, 140) : rand(150, 400),
         maxStay: style === "greedy" ? Infinity : rand(90, 900),
       };
     }),
   ];
+  for (const p of players) p.on = p.you || p.lateAt == null;
   const s = {
-    t: 0, phase: "lobby", start: null, lastMove: null, result: null,
+    t: 0, phase: "lobby", start: null, lastMove: null, result: null, firstExit: null,
     rules: newGameState(lobbySecs), reading: null, counter: 50_000, nextReading: 0, pausedSince: null,
   };
 
@@ -71,28 +74,41 @@ export function createDemo({ buyIn = 100, lobbySecs = 20 } = {}) {
     if (s.phase !== "live") return;
     const view = display(s.rules, s.reading, s.reading.observedAt);
     s.pausedSince = view.mode === "paused" ? (s.pausedSince ?? s.t) : null;
+    const sinceStart = s.t - s.start;
     for (const p of players) {
-      if (p.landsAt != null && s.t >= p.landsAt && p.exit == null) { p.exit = p.landsAt - s.start; p.landsAt = null; }
+      if (!p.on && p.lateAt != null && sinceStart >= p.lateAt && entriesOpen()) { p.on = true; p.from = sinceStart; }
+      if (!p.on) continue;
+      if (p.landsAt != null && s.t >= p.landsAt && p.exit == null) {
+        p.exit = p.landsAt - s.start;
+        p.landsAt = null;
+        s.firstExit ??= p.exit; // closes late entries
+      }
       if (p.you || p.exit != null || p.landsAt != null) continue;
       const pausedFor = s.pausedSince == null ? 0 : s.t - s.pausedSince;
-      if (pausedFor > p.breakNerve || s.t - s.start > p.maxStay) requestExit(p);
+      if (pausedFor > p.breakNerve || sinceStart - p.from > p.maxStay) requestExit(p);
     }
   }
 
+  // Late entries: open for lateWindow seconds after the start, until the first exit.
+  function entriesOpen() {
+    return s.phase === "live" && s.firstExit == null && s.t - s.start <= lateWindow;
+  }
+  const inGame = () => players.filter((p) => p.on);
+
   function finish() {
     s.phase = "ended";
-    const exits = players.filter((p) => p.exit != null).sort((a, b) => a.exit - b.exit).map((p) => ({ id: p.id, t: p.exit }));
-    s.result = settle({ buyIn, inPot: players.length, exits, lastMove: s.lastMove - s.start });
+    const exits = inGame().filter((p) => p.exit != null).sort((a, b) => a.exit - b.exit).map((p) => ({ id: p.id, t: p.exit, from: p.from }));
+    s.result = settle({ buyIn, inPot: inGame().length, exits, lastMove: s.lastMove - s.start });
   }
 
   /** What you'd get if your exit landed now and everyone still on were caught. */
   function ifYouGotOffNow() {
     if (s.phase !== "live") return null;
     const now = s.t - s.start;
-    const exits = players.filter((p) => p.exit != null && !p.you).map((p) => ({ id: p.id, t: p.exit }));
+    const exits = inGame().filter((p) => p.exit != null && !p.you).map((p) => ({ id: p.id, t: p.exit, from: p.from }));
     exits.push({ id: "you", t: now });
     exits.sort((a, b) => a.t - b.t);
-    return settle({ buyIn, inPot: players.length, exits, lastMove: now }).payouts.get("you").total;
+    return settle({ buyIn, inPot: inGame().length, exits, lastMove: now }).payouts.get("you").total;
   }
 
   return {
@@ -100,7 +116,10 @@ export function createDemo({ buyIn = 100, lobbySecs = 20 } = {}) {
     exitYou: () => requestExit(players[0]),
     ifYouGotOffNow,
     get state() { return s; },
-    get players() { return players; },
+    get players() { return inGame(); }, // players on the wheel (late joiners appear once they're on)
+    /** Seconds late entries stay open (they also close at the first exit), or null when closed. */
+    lateEntryLeft: () => (entriesOpen() ? lateWindow - (s.t - s.start) : null),
+    lateWindow,
     buyIn,
     view: () => (s.reading ? display(s.rules, s.reading, s.reading.observedAt) : { mode: "asleep" }),
   };
