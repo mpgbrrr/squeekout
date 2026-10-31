@@ -827,11 +827,12 @@ const exitTypes = { ScheduledExit: [
   { name: "afterSeconds", type: "uint32" }, { name: "issuedAt", type: "uint64" }] };
 const autoOffKey = (id) => `autoOff:${GAME.toLowerCase()}:${id}:${me?.toLowerCase()}`;
 const savedAutoOff = (id) => { const v = Number(store("localStorage", autoOffKey(id))); return v > 0 && v < CANCEL ? v : null; };
-const parseRunTime = (text) => {
-  const m = /^\s*(\d{1,3})(?::(\d{1,2}))?\s*$/.exec(text || "");
-  if (!m || Number(m[2] ?? 0) > 59) return null;
-  const s = Number(m[1]) * 60 + Number(m[2] ?? 0);
-  return s > 0 && s <= 24 * 3600 ? s : null;
+// Minutes and seconds into the run, from two number boxes (a phone's number pad has no ":").
+const readRunTime = () => {
+  const [m, sec] = [$("autoOffMin").value.trim(), $("autoOffSec").value.trim()];
+  if (!/^\d{0,3}$/.test(m) || !/^\d{0,2}$/.test(sec) || (!m && !sec) || Number(sec) > 59) return null;
+  const total = Number(m || 0) * 60 + Number(sec || 0);
+  return total > 0 && total <= 24 * 3600 ? total : null;
 };
 
 function renderAutoOff(g, mine, status, start, now) {
@@ -842,7 +843,10 @@ function renderAutoOff(g, mine, status, start, now) {
   const at = savedAutoOff(g.id);
   $("autoOffCancel").hidden = at == null;
   $("autoOffSet").textContent = at == null ? "Schedule" : "Change";
-  if (document.activeElement !== $("autoOffTime") && at != null) $("autoOffTime").value = mmss(at);
+  if (at != null && ![$("autoOffMin"), $("autoOffSec")].includes(document.activeElement)) {
+    $("autoOffMin").value = String(Math.floor(at / 60));
+    $("autoOffSec").value = String(at % 60).padStart(2, "0");
+  }
   $("autoOffNote").textContent = at == null ? "Get off automatically at a set time into his run, without watching."
     : status === "Live" && now >= start + at ? `Getting you off at ${mmss(at)}: it lands in the next block.`
     : status === "Live" ? `You'll get off at ${mmss(at)} into the run, in ${mmss(start + at - now)}, even with this page closed.`
@@ -852,8 +856,8 @@ function renderAutoOff(g, mine, status, start, now) {
 }
 
 async function scheduleAutoOff(g, cancel = false) {
-  const afterSeconds = cancel ? CANCEL : parseRunTime($("autoOffTime").value);
-  if (afterSeconds == null) { msg("Enter a time into the run as minutes:seconds, for example 8:23.", true); return; }
+  const afterSeconds = cancel ? CANCEL : readRunTime();
+  if (afterSeconds == null) { msg("Enter how far into the run to get off: minutes and seconds (0–59), for example 8 min 23 sec.", true); return; }
   const start = Number(g.startTime), now = Math.floor(Date.now() / 1000);
   if (!cancel && Status[Number(g.status)] === "Live" && start + afterSeconds <= now + 5) {
     msg(`That moment has passed: he's ${mmss(now - start)} into the run. Pick a later time, or get off now.`, true);
