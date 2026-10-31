@@ -432,6 +432,64 @@ describe("SqueekChicken", () => {
     });
   });
 
+  describe("scheduled exits", () => {
+    const types = { ScheduledExit: [
+      { name: "gameId", type: "uint256" }, { name: "player", type: "address" },
+      { name: "afterSeconds", type: "uint32" }, { name: "issuedAt", type: "uint64" }] };
+    async function sign(game, player, id, afterSeconds, issuedAt) {
+      const domain = { name: "Squeek Out", version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: game.target };
+      return player.signTypedData(domain, types, { gameId: id, player: player.address, afterSeconds, issuedAt });
+    }
+    async function liveGame() {
+      const f = await deploy();
+      const { game, watcher, players } = f;
+      const { id, p } = await createGame(game);
+      for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
+      const start = p.earliestStart + 100;
+      await at(start + 10, () => game.connect(watcher).postStart(id, start));
+      return { ...f, id, start };
+    }
+
+    it("lets anyone send a player's signed exit once its time has come, and it counts at the real time", async () => {
+      const { game, keeper, players, id, start } = await loadFixture(liveGame);
+      const [a] = players;
+      const sig = await sign(game, a, id, 503, 1); // 8:23 into the run
+      await time.setNextBlockTimestamp(start + 502);
+      await expect(game.connect(keeper).exitScheduled(id, a.address, 503, 1, sig)).to.be.revertedWithCustomError(game, "TooEarly");
+      await at(start + 509, () => game.connect(keeper).exitScheduled(id, a.address, 503, 1, sig)); // the next block after 8:23
+      expect((await game.entries(id, a.address)).exitTime).to.equal(BigInt(start + 509));
+      expect((await game.getGame(id)).firstExitTime).to.equal(BigInt(start + 509));
+      await expect(game.connect(keeper).exitScheduled(id, a.address, 503, 1, sig)).to.be.revertedWithCustomError(game, "AlreadyExited");
+    });
+
+    it("refuses a signature from anyone but the player, or for another time", async () => {
+      const { game, keeper, players, id, start } = await loadFixture(liveGame);
+      const [a, b] = players;
+      const byB = await sign(game, b, id, 60, 1);
+      await time.increaseTo(start + 120);
+      await expect(game.connect(keeper).exitScheduled(id, a.address, 60, 1, byB)).to.be.revertedWithCustomError(game, "BadSignature");
+      const byA = await sign(game, a, id, 60, 1);
+      await expect(game.connect(keeper).exitScheduled(id, a.address, 30, 1, byA)).to.be.revertedWithCustomError(game, "BadSignature");
+    });
+
+    it("lets a player revoke signed exits on chain, and only takes them while the game is live", async () => {
+      const { game, keeper, watcher, players } = await loadFixture(deploy);
+      const { id, p } = await createGame(game);
+      for (const pl of players.slice(0, 3)) await game.connect(pl).enter(id);
+      const [a] = players;
+      const old = await sign(game, a, id, 60, 1);
+      await expect(game.connect(keeper).exitScheduled(id, a.address, 60, 1, old)).to.be.revertedWithCustomError(game, "WrongStatus");
+      await game.connect(a).revokeScheduledExits(id);
+      const start = p.earliestStart + 10;
+      await at(start + 5, () => game.connect(watcher).postStart(id, start));
+      await time.increaseTo(start + 100);
+      await expect(game.connect(keeper).exitScheduled(id, a.address, 60, 1, old)).to.be.revertedWithCustomError(game, "BadSignature");
+      const fresh = await sign(game, a, id, 60, (await time.latest()) + 1);
+      await game.connect(keeper).exitScheduled(id, a.address, 60, (await time.latest()) + 1, fresh);
+      expect((await game.entries(id, a.address)).exitTime).to.be.gt(0n);
+    });
+  });
+
   describe("upgrades", () => {
     const V2_OPTS = { unsafeAllow: ["missing-initializer"] }; // the mock has nothing new to initialize
     it("keeps games and balances through an upgrade between games", async () => {
@@ -442,7 +500,7 @@ describe("SqueekChicken", () => {
       const owed = await game.claimable(id, ten[3].address);
       const v2 = await upgrades.upgradeProxy(game.target, await ethers.getContractFactory("SqueekChickenV2Mock"), V2_OPTS);
       expect(v2.target).to.equal(game.target);
-      expect(await v2.version()).to.equal("2");
+      expect(await v2.version()).to.equal("next");
       expect(await v2.owner()).to.equal(owner.address);
       expect(await v2.claimable(id, ten[3].address)).to.equal(owed);
       await v2.connect(ten[3]).claim(id);

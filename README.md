@@ -19,6 +19,7 @@ Everyone buys in with SQK while the lobby is open. The game starts the moment th
 | Next game | Its lobby opens as soon as the previous game's end is posted, without waiting for its payouts |
 | Game ends | When the wheel has been still for **3 minutes**, at his last movement |
 | Grace | Exits up to **12 s** (one Ethereum block) after his last movement still win |
+| Auto-off | Optional: schedule your exit for a set time into the run (say 8:23). You sign it for free; the watcher keeps it private and sends it at that moment, so it lands in the next block. Same rules as getting off by hand. Cancel or change it any time before then |
 | Payout curve | Your weight is your **time on the wheel**, to the second, from the start (or from when you got on, if you joined late): stay twice as long, earn twice the share. (Until 29 Oct 2026 it was +25% per 2 minutes, which was nearly flat in short runs, so bailing first often paid.) |
 | Jackpot | **20%** of the pot is shared by the **last 10%** of winners (at least one) |
 | Everyone else who got off in time | Shares the other 80% by weight |
@@ -37,6 +38,7 @@ Squeekchain live feed ──► watcher ──► SqueekChicken contract ◄─�
                           serves the web app + log
 ```
 
+- **`watcher/scheduled-exits.mjs`**: auto-off. Players sign an EIP-712 "get me off N seconds into the run"; the watcher stores it (next to the game state) and sends it with `exitScheduled` once that moment comes, from its own wallet that the watcher keeps in gas. The contract checks the signature and the time, and a player can revoke every signed exit on chain with `revokeScheduledExits`.
 - **`contracts/SqueekChicken.sol`**: holds the buy-ins and pays out. It sits behind a permanent proxy address (UUPS), so new rules can be added without moving to a new address; the owner can upgrade it only while no game is live or waiting for its payouts. The watcher can only post when the game started and when the hamster last moved, or void a game; it can't move money or pick winners. Optionally, `finalize` checks the watcher's end claim against Squeekchain's settled rounds (`SqueekCore`) before paying.
 - **`shared/rules.js`**: the game rules for reading the feed. The watcher uses them to decide, and the web app uses the same file to animate the hamster, so what players see matches what the watcher decides.
 - **`watcher/watcher.mjs`**: reads the feed every second, posts decisions, finalizes ended games, and serves the web app plus a public log at `/log`.

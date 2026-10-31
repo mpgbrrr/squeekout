@@ -4,6 +4,8 @@ pragma solidity 0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -16,8 +18,9 @@ import {ISqueekCore} from "./ISqueekCore.sol";
 /// Once he runs, players exit whenever they like. The game
 /// ends at his last movement once the wheel has been still for `idleWindow` seconds. Anyone still in, or
 /// who exited too late, is caught. Winners split the pot in proportion to how long they stayed on, and the last 10% of
-/// winners share a jackpot. Each player's time counts from when they got on. When a game's end is posted,
-/// the watcher opens the next one.
+/// winners share a jackpot. Each player's time counts from when they got on. Players can also schedule their
+/// exit: they sign "get me off N seconds into the run", and whoever holds the signature (the watcher) sends it
+/// once that time comes. When a game's end is posted, the watcher opens the next one.
 /// @dev Testnet build. A watcher service reads Squeekchain's live feed and posts start, end and void
 /// decisions; it cannot move funds or choose winners. When enabled, `finalize` checks the watcher's end
 /// claim against SqueekCore's settled rounds before any payout. Upgradeable (UUPS) by the owner, only while no
@@ -93,11 +96,17 @@ contract SqueekChicken is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     mapping(uint256 => mapping(address => Entry)) public entries;
     mapping(uint256 => address[]) internal players;
     mapping(uint256 => address[]) internal exitOrder; // exits in the order they happened (block time never decreases)
+    // version 2: scheduled exits signed before this time (per game and player) were revoked
+    mapping(uint256 => mapping(address => uint64)) public scheduledExitsValidFrom;
+
+    bytes32 public constant SCHEDULED_EXIT_TYPEHASH =
+        keccak256("ScheduledExit(uint256 gameId,address player,uint32 afterSeconds,uint64 issuedAt)");
 
     event GameCreated(uint256 indexed id, Params params, uint256 rolloverIn);
     event Entered(uint256 indexed id, address indexed player);
     event LeftLobby(uint256 indexed id, address indexed player);
     event Exited(uint256 indexed id, address indexed player, uint64 exitTime);
+    event ScheduledExitsRevoked(uint256 indexed id, address indexed player, uint64 validFrom);
     event Started(uint256 indexed id, uint64 startTime);
     event EndPosted(uint256 indexed id, uint64 lastMove, uint64 counter);
     event Voided(uint256 indexed id, string reason);
@@ -120,6 +129,8 @@ contract SqueekChicken is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     error NothingToClaim();
     error RoundCheckPending();
     error BadParams();
+    error TooEarly();
+    error BadSignature();
 
     modifier onlyWatcher() {
         if (msg.sender != watcher) revert NotWatcher();
@@ -141,7 +152,7 @@ contract SqueekChicken is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function version() public pure virtual returns (string memory) {
-        return "1";
+        return "2";
     }
 
     /// @dev Upgrades only between games: never while a game is running or waiting for its payouts.
@@ -241,16 +252,52 @@ contract SqueekChicken is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
 
     /// @notice Get off the wheel. Allowed until the end is posted; an exit before the start is a refund.
     function exit(uint256 id) external {
+        _exit(id, msg.sender);
+    }
+
+    /// @notice Sends a player's scheduled exit: they signed "get me off `afterSeconds` into the run" (EIP-712),
+    /// and it lands now, at the real time, once that moment has come. Anyone holding the signature may send it;
+    /// in practice the watcher, which keeps it private until then.
+    function exitScheduled(uint256 id, address player, uint32 afterSeconds, uint64 issuedAt, bytes calldata signature) external {
+        Game storage g = games[id];
+        if (g.status != Status.Live) revert WrongStatus(g.status);
+        if (block.timestamp < uint256(g.startTime) + afterSeconds) revert TooEarly();
+        if (issuedAt < scheduledExitsValidFrom[id][player]) revert BadSignature();
+        bytes32 digest = MessageHashUtils.toTypedDataHash(_domainSeparator(),
+            keccak256(abi.encode(SCHEDULED_EXIT_TYPEHASH, id, player, afterSeconds, issuedAt)));
+        if (!SignatureChecker.isValidSignatureNow(player, digest, signature)) revert BadSignature();
+        _exit(id, player);
+    }
+
+    /// @notice Cancels, on chain, every scheduled exit you signed for game `id` so far. Not needed in normal play
+    /// (the page cancels through the watcher); it guarantees no old signature can be sent.
+    function revokeScheduledExits(uint256 id) external {
+        scheduledExitsValidFrom[id][msg.sender] = uint64(block.timestamp) + 1;
+        emit ScheduledExitsRevoked(id, msg.sender, uint64(block.timestamp) + 1);
+    }
+
+    /// @notice The EIP-712 domain scheduled exits are signed in: name "Squeek Out", version "1".
+    function domainSeparator() external view returns (bytes32) {
+        return _domainSeparator();
+    }
+
+    function _domainSeparator() internal view returns (bytes32) {
+        return keccak256(abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256("Squeek Out"), keccak256("1"), block.chainid, address(this)));
+    }
+
+    function _exit(uint256 id, address player) internal {
         Game storage g = games[id];
         if (g.status != Status.Lobby && g.status != Status.Live) revert WrongStatus(g.status);
-        Entry storage e = entries[id][msg.sender];
+        Entry storage e = entries[id][player];
         if (!e.entered || e.left) revert NotEntered();
         if (e.exitTime != 0) revert AlreadyExited();
         if (g.status == Status.Live && !_inPotEntry(g, e)) revert LateEntry();
         e.exitTime = uint64(block.timestamp);
         if (g.status == Status.Live && g.firstExitTime == 0) g.firstExitTime = e.exitTime;
-        exitOrder[id].push(msg.sender);
-        emit Exited(id, msg.sender, e.exitTime);
+        exitOrder[id].push(player);
+        emit Exited(id, player, e.exitTime);
     }
 
     function claim(uint256 id) external nonReentrant returns (uint256 amount) {

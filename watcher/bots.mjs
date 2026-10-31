@@ -1,11 +1,12 @@
 // Test players for testnet games played with the free test token (tSQK). Each has its own wallet, derived
 // from the watcher's key, mints itself tSQK, joins every game at a random moment in the lobby (or now and then
 // late, after he starts running), and gets off the wheel at a random moment in the style of the demo game's
-// bots. The watcher tops up their gas.
+// bots, or now and then schedules its exit for a set time into the run instead. The watcher tops up their gas.
 // Only used when the game's token is TestSQK, never with real SQK.
 import { createWalletClient, http, keccak256, maxUint256, parseAbi, parseEther, stringToHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { display } from "../shared/rules.js";
+import { TYPES, domainFor } from "./scheduled-exits.mjs";
 
 const NAMES = ["Nibbles", "Pip", "Captain Seed", "Whiskers", "Dash", "Pepper", "Sunflower", "Biscuit", "Hazel"];
 const STYLES = ["greedy", "steady", "steady", "jumpy", "jumpy"];
@@ -28,14 +29,14 @@ export async function isTestToken(pub, sqk) {
  * @param seedKey the watcher's private key; each bot's key is derived from it
  * @param fund(address, wei) sends gas money from the watcher (called from the watcher's chain work)
  */
-export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fund, log, previousGames = [] }) {
+export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fund, log, previousGames = [], scheduledExits = null }) {
   let previousCheckedAt = 0;
   const bots = Array.from({ length: count }, (_, i) => {
     const account = privateKeyToAccount(keccak256(stringToHex(`${seedKey}:squeek-chicken-bot:${i}`)));
     return {
       name: NAMES[i % NAMES.length], style: STYLES[i % STYLES.length], account,
       wallet: createWalletClient({ account, chain, transport: http(rpc) }),
-      busy: false, plans: new Map(), // game id -> { enterAt, lateAt, joinedAt, breakNerve, maxStay, exitSent }
+      busy: false, plans: new Map(), // game id -> { enterAt, lateAt, joinedAt, scheduleAt, scheduled, breakNerve, maxStay, exitSent }
     };
   });
 
@@ -64,6 +65,9 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
         enterAt: Date.now() / 1000 + rand(5, Math.max(10, lobbyOpenFor * 0.7)),
         lateAt: canBeLate && Math.random() < 0.2 ? rand(10, 100) : null, // seconds after the start
         joinedAt: null,
+        // About 1 in 4 bots sets an auto-off time instead of watching: 4 to 30 minutes into the run.
+        scheduleAt: canBeLate && scheduledExits && Math.random() < 0.25 ? Math.round(rand(240, 1800)) : null,
+        scheduled: false,
         // How long a break they'll sit through, and how long they'll stay on at most (like the demo's bots).
         breakNerve: bot.style === "jumpy" ? rand(8, 40) : bot.style === "steady" ? rand(40, 140) : rand(150, 400),
         maxStay: bot.style === "greedy" ? Infinity : bot.style === "steady" ? rand(300, 3600) : rand(60, 900),
@@ -72,6 +76,16 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
       for (const old of bot.plans.keys()) if (old < id - 5) bot.plans.delete(old);
     }
     return bot.plans.get(id);
+  }
+
+  // Signs "get me off at plan.scheduleAt into the run" and hands it to the watcher, like a player on the page.
+  async function schedule(bot, id, plan) {
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const message = { gameId: BigInt(id), player: bot.account.address, afterSeconds: plan.scheduleAt, issuedAt: BigInt(issuedAt) };
+    const signature = await bot.account.signTypedData({ domain: domainFor(chain.id, game), types: TYPES, primaryType: "ScheduledExit", message });
+    const r = await scheduledExits.submit({ gameId: id, player: bot.account.address, afterSeconds: plan.scheduleAt, issuedAt, signature });
+    plan.scheduled = Boolean(r.ok);
+    log("bot", { bot: bot.name, what: r.ok ? `scheduled its exit for +${Math.floor(plan.scheduleAt / 60)}:${String(plan.scheduleAt % 60).padStart(2, "0")} in game #${id}` : `couldn't schedule its exit: ${r.error ?? "off"}` });
   }
 
   return {
@@ -113,7 +127,9 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
             const allowed = await pub.readContract({ address: sqk, abi: token, functionName: "allowance", args: [bot.account.address, game] });
             if (allowed < g.p.buyIn) await send(bot, sqk, token, "approve", [game, maxUint256]);
             const hash = await send(bot, game, abi, "enter", [BigInt(id)]);
-            planFor(bot, id, 0).joinedAt = Date.now() / 1000;
+            const plan = planFor(bot, id, 0);
+            plan.joinedAt = Date.now() / 1000;
+            if (plan.scheduleAt != null) await schedule(bot, id, plan);
             return hash;
           });
           if (g.status === "Lobby" && !entered) {
@@ -141,6 +157,7 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
         const plan = bot.plans.get(id) ?? planFor(bot, id, 0);
         if (plan.exitSent || bot.busy) continue;
         if (plan.lateAt != null && !plan.joinedAt) continue; // hasn't jumped on (yet)
+        if (plan.scheduled) continue; // the watcher gets it off at its scheduled time
         if (pausedFor > plan.breakNerve || now - Math.max(startTime, plan.joinedAt ?? 0) > plan.maxStay) {
           plan.exitSent = true;
           run(bot, `get off game #${id}`, async () => {

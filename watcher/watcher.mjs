@@ -26,6 +26,7 @@ import { hardhat, sepolia } from "viem/chains";
 import { DEFAULTS, newGameState, readingFromStatus, step, trackRun } from "../shared/rules.js";
 import { createBots, isTestToken } from "./bots.mjs";
 import { createPush } from "./push.mjs";
+import { createScheduledExits } from "./scheduled-exits.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const env = process.env;
@@ -60,6 +61,31 @@ const pub = createPublicClient({ chain, transport: http(RPC) });
 const wallet = createWalletClient({ account, chain, transport: http(RPC) });
 const Status = ["None", "Lobby", "Live", "Ended", "Settled", "Voided", "RolledOver"];
 
+// Sends gas money from the watcher (to the test players and the scheduled-exit sender).
+async function fund(to, value) {
+  const hash = await wallet.sendTransaction({ to, value });
+  await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
+  return hash;
+}
+
+// Scheduled exits: players sign "get me off N seconds into the run" and the watcher sends it then. Needs
+// contract version 2 or later, checked with every chain round (so an upgrade is picked up without a restart).
+let scheduledExitsLive = false;
+const scheduledExits = createScheduledExits({
+  file: join(dirname(STATE_FILE), "scheduled-exits.json"), chainId: chain.id, game: GAME, abi, pub, chain, rpc: RPC,
+  seedKey: env.WATCHER_PRIVATE_KEY, fund, log: (...a) => log(...a),
+  readEntry: async (id, player) => {
+    const e = await pub.readContract({ address: GAME, abi, functionName: "entries", args: [BigInt(id), player] });
+    return { entered: e[0], left: e[1], exitTime: Number(e[4]) };
+  },
+});
+async function checkScheduledExits() {
+  const v = await pub.readContract({ address: GAME, abi, functionName: "version" }).catch(() => "0");
+  const live = Number(v) >= 2;
+  if (live !== scheduledExitsLive) log("scheduled_exits", { on: live, contractVersion: v });
+  scheduledExitsLive = live;
+}
+
 // Test players (BOTS, default 5; 0 turns them off). Only for games played with the free test token.
 let bots = null;
 try {
@@ -68,11 +94,7 @@ try {
   if (count > 0 && (await isTestToken(pub, sqk))) {
     bots = createBots({
       count, seedKey: env.WATCHER_PRIVATE_KEY, pub, chain, rpc: RPC, game: GAME, abi, sqk, log: (...a) => log(...a), previousGames: PREVIOUS_GAMES,
-      fund: async (to, value) => {
-        const hash = await wallet.sendTransaction({ to, value });
-        await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
-        return hash;
-      },
+      fund, scheduledExits: { submit: (body) => scheduledExitsLive ? scheduledExits.submit(body, chainStatus) : { ok: false } },
     });
   }
 } catch (e) {
@@ -177,6 +199,7 @@ async function pollFeed() {
 // ---------------------------------------------------------------- chain
 
 const chainGames = new Map(); // id -> { status, p, startTime }, refreshed with every chain round
+const chainStatus = (id) => chainGames.get(Number(id))?.status ?? null;
 async function refreshGames() {
   const count = Number(await pub.readContract({ address: GAME, abi, functionName: "gameCount" }));
   // Finished games never change, so only read the games still being tracked and the latest three
@@ -331,6 +354,7 @@ async function tick() {
         .catch((e) => log("bot_error", { error: String(e.shortMessage || e.message || e) }));
     }
   }
+  if (scheduledExitsLive) scheduledExits.onSecond(chainGames, now);
   persist();
 }
 
@@ -344,6 +368,8 @@ async function chainWork() {
       if (game.status === "Ended" && !game.queue.length) await tryFinalize(id);
     }
     await openNextIfIdle();
+    await checkScheduledExits();
+    if (scheduledExitsLive) await scheduledExits.chainWork();
     await retirePreviousLobbies();
     if (bots) await bots.chainWork(Math.max(0, ...chainGames.keys()), chainGames);
     persist();
@@ -377,6 +403,13 @@ createServer(async (req, res) => {
     res.writeHead(ok ? 200 : 400, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify({ ok }));
   }
+  if (req.method === "POST" && url.pathname === "/scheduled-exit") {
+    const body = await readJson(req);
+    const result = scheduledExitsLive ? await scheduledExits.submit(body, chainStatus).catch((e) => ({ ok: false, error: String(e.shortMessage || e.message || e) }))
+      : { ok: false, error: "Scheduled exits aren't available on this game yet." };
+    res.writeHead(result.ok ? 200 : 400, { "content-type": "application/json", "cache-control": "no-store" });
+    return res.end(JSON.stringify(result));
+  }
   if (url.pathname === "/log") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify(recent.slice(-200)));
@@ -391,7 +424,7 @@ createServer(async (req, res) => {
   if (url.pathname === "/config.json") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify({ gameAddress: GAME, chainId: chain.id, rpcUrl: RPC, squeekApi: API, watcher: account.address, bots: bots?.list() ?? [],
-      streamBroadcastId: STREAM_BROADCAST_ID, previousGames: PREVIOUS_GAMES, vapidPublicKey: push.publicKey }));
+      streamBroadcastId: STREAM_BROADCAST_ID, previousGames: PREVIOUS_GAMES, vapidPublicKey: push.publicKey, scheduledExits: scheduledExitsLive }));
   }
   const rel = url.pathname === "/" ? "/web/index.html" : url.pathname.startsWith("/shared/") ? url.pathname : `/web${url.pathname}`;
   const file = normalize(join(ROOT, rel));

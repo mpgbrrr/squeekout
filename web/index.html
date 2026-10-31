@@ -113,6 +113,15 @@
           <button class="secondary" id="finalize" hidden>Finalize payouts (earn the bounty)</button>
           <button class="secondary" id="faucet" hidden>Get free test tokens</button>
         </div>
+        <div class="autooff" id="autoOff" hidden>
+          <div><b>Auto-off</b> <span class="autooff-note" id="autoOffNote">Get off automatically at a set time into his run, without watching.</span></div>
+          <div class="autooff-row">
+            <label class="sr-only" for="autoOffTime">Time into the run, minutes:seconds</label>
+            <input id="autoOffTime" inputmode="numeric" autocomplete="off" placeholder="8:23" maxlength="6">
+            <button class="secondary small" id="autoOffSet">Schedule</button>
+            <button class="secondary small" id="autoOffCancel" hidden>Cancel</button>
+          </div>
+        </div>
         <div class="msg" id="msg" role="status"></div>
         <div class="unclaimed" id="unclaimed" hidden></div>
       </div>
@@ -132,6 +141,7 @@
       <li>If Squeekchain's feed drops while the hamster may have stopped out of sight, the game is voided and everyone gets their buy-in back.</li>
       <li>If everyone is caught, the pot rolls into the next game. The next lobby opens as soon as he stops, while the last game's payouts are being finalized.</li>
       <li>A late entry that lands after entries close (2 minutes after the start, or in the same block as the first player getting off, or later) is refunded: claim it back from the game card.</li>
+      <li>Don't want to watch the whole run? Set <b>Auto-off</b> in the game card (for example 8:23) and you'll get off that far into his run, even with the page closed. It's a free signature; the watcher keeps your time private and sends your exit when the moment comes, landing in the next block. It follows the same rules as getting off by hand: if he stopped before your time, you're caught.</li>
       <li>Joined while he's asleep? Turn on <b>Start alerts</b> in the game card for an alarm the moment he starts running. With notifications allowed, it reaches you even when this page is closed (on iPhone, add the site to your Home Screen first).</li>
       <li>There's no house fee. Whoever finalizes the payouts earns a small bounty (5 SQK, at most 1% of the pot).</li>
       <li>This runs on the Sepolia testnet: testnet SQK has no value.</li>

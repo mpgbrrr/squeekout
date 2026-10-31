@@ -52,6 +52,6 @@ contract MockSqueekCore {
 /// @custom:oz-upgrades-from SqueekChicken
 contract SqueekChickenV2Mock is SqueekChicken {
     function version() public pure override returns (string memory) {
-        return "2";
+        return "next";
     }
 }

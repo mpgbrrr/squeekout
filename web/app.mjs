@@ -383,6 +383,7 @@ function render() {
   renderHud(hudCount, lobby ? null : inPot, hudLabel, events, (t) => (start && t >= start ? `+${mmss(t - start)}` : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
 
   const mine = me && g.players.find((p) => p.addr.toLowerCase() === me.toLowerCase());
+  renderAutoOff(g, mine, status, start, now);
   const inLobby = mine && lobby && !mine.entry.left && !Number(mine.entry.exitTime);
   const btn = $("mainAction");
   $("leave").hidden = !inLobby;
@@ -806,6 +807,67 @@ async function enter(g) {
   if (permit) return tx("enterWithPermit", [g.id, permit.deadline, permit.v, permit.r, permit.s]);
   await tx("approve", [GAME, g.p.buyIn], SQK, erc20);
   await tx("enter", [g.id]);
+}
+
+// ---------------------------------------------------------------- auto-off (scheduled exits)
+
+// A signed "get me off N seconds into the run", kept private by the watcher, which sends it at that moment.
+// The page remembers the time this browser set, to show it; the watcher holds the only copy that acts.
+const SCHEDULING = Boolean(cfg.scheduledExits);
+const CANCEL = 4294967295;
+const exitTypes = { ScheduledExit: [
+  { name: "gameId", type: "uint256" }, { name: "player", type: "address" },
+  { name: "afterSeconds", type: "uint32" }, { name: "issuedAt", type: "uint64" }] };
+const autoOffKey = (id) => `autoOff:${GAME.toLowerCase()}:${id}:${me?.toLowerCase()}`;
+const savedAutoOff = (id) => { const v = Number(store("localStorage", autoOffKey(id))); return v > 0 && v < CANCEL ? v : null; };
+const parseRunTime = (text) => {
+  const m = /^\s*(\d{1,3})(?::(\d{1,2}))?\s*$/.exec(text || "");
+  if (!m || Number(m[2] ?? 0) > 59) return null;
+  const s = Number(m[1]) * 60 + Number(m[2] ?? 0);
+  return s > 0 && s <= 24 * 3600 ? s : null;
+};
+
+function renderAutoOff(g, mine, status, start, now) {
+  const e = mine?.entry;
+  const onWheel = e && !e.left && !Number(e.exitTime) && (status === "Lobby" || (status === "Live" && countsInPot(entryTimes(e), potRules(g))));
+  $("autoOff").hidden = !(SCHEDULING && onWheel);
+  if ($("autoOff").hidden) return;
+  const at = savedAutoOff(g.id);
+  $("autoOffCancel").hidden = at == null;
+  $("autoOffSet").textContent = at == null ? "Schedule" : "Change";
+  if (document.activeElement !== $("autoOffTime") && at != null) $("autoOffTime").value = mmss(at);
+  $("autoOffNote").textContent = at == null ? "Get off automatically at a set time into his run, without watching."
+    : status === "Live" && now >= start + at ? `Getting you off at ${mmss(at)}: it lands in the next block.`
+    : status === "Live" ? `You'll get off at ${mmss(at)} into the run, in ${mmss(start + at - now)}, even with this page closed.`
+    : `You'll get off at ${mmss(at)} into the run, even with this page closed.`;
+  $("autoOffSet").onclick = () => scheduleAutoOff(g);
+  $("autoOffCancel").onclick = () => scheduleAutoOff(g, true);
+}
+
+async function scheduleAutoOff(g, cancel = false) {
+  const afterSeconds = cancel ? CANCEL : parseRunTime($("autoOffTime").value);
+  if (afterSeconds == null) { msg("Enter a time into the run as minutes:seconds, for example 8:23.", true); return; }
+  const start = Number(g.startTime), now = Math.floor(Date.now() / 1000);
+  if (!cancel && Status[Number(g.status)] === "Live" && start + afterSeconds <= now + 5) {
+    msg(`That moment has passed: he's ${mmss(now - start)} into the run. Pick a later time, or get off now.`, true);
+    return;
+  }
+  try {
+    await conn.ensureChain();
+    msg(cancel ? "Sign to cancel your auto-off (free, not a transaction)…" : `Sign your auto-off at ${mmss(afterSeconds)} (free, not a transaction)…`);
+    const issuedAt = now;
+    const signature = await wallet.signTypedData({ account: me, domain: { name: "Squeek Out", version: "1", chainId: chain.id, verifyingContract: GAME },
+      types: exitTypes, primaryType: "ScheduledExit", message: { gameId: g.id, player: me, afterSeconds, issuedAt: BigInt(issuedAt) } });
+    const res = await fetch("/scheduled-exit", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ gameId: Number(g.id), player: me, afterSeconds, issuedAt, signature }) });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok || !r.ok) throw new Error(r.error || `The server said ${res.status}.`);
+    store("localStorage", autoOffKey(g.id), String(cancel ? 0 : afterSeconds));
+    msg(cancel ? "Auto-off cancelled: you'll stay on until you get off yourself." : `Auto-off set: you'll get off at ${mmss(afterSeconds)} into the run.`);
+  } catch (e) {
+    msg(walletErrorText(e), true);
+  }
+  render();
 }
 
 function msg(text, error = false) {
