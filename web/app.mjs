@@ -122,6 +122,13 @@ function renderHud(count, total, label, events, fmt) {
     `<li class="${i === 0 && fresh ? "fresh" : ""}"><span class="when">${e.when ?? fmt(e.t)}</span><span class="${e.kind || ""}">${esc(e.text)}</span></li>`).join("");
 }
 
+// A break's countdown, to the second from his last movement. The view's own `remaining` moves only when a
+// reading arrives (every 10 s), so a timer drawn from it alone would jump between the two.
+function preciseView(view, now) {
+  if (view.mode !== "paused" || rules.lastMove == null) return view;
+  return { ...view, remaining: Math.max(0, Math.ceil(rules.lastMove + DEFAULTS.idleWindow - now)) };
+}
+
 function showTimer(view, runClock, now, counting) {
   if (view.mode === "running") {
     $("countdown").textContent = runClock.text(now);
@@ -173,7 +180,7 @@ async function pollFeed() {
   }[view.mode];
   $("mode").textContent = label;
   $("mode").className = `mode ${view.mode}`;
-  showTimer(view, liveRun, now, true);
+  showTimer(preciseView(view, Date.now() / 1000), liveRun, now, true);
   liveMoments.update(view.mode, now, live);
 }
 // Opened mid-game? Start from the watcher's record of his last movement and this run, so the break
@@ -590,7 +597,8 @@ function renderDemo() {
     "signal-lost": "Signal lost · clock paused",
   }[view.mode];
   $("mode").className = `mode ${view.mode}`;
-  showTimer(view, demoRun, s.t, s.phase === "live");
+  const demoLeft = view.mode === "paused" && s.rules.lastMove != null ? Math.max(0, Math.ceil(s.rules.lastMove + DEFAULTS.idleWindow - s.t)) : null;
+  showTimer(demoLeft == null ? view : { ...view, remaining: demoLeft }, demoRun, s.t, s.phase === "live");
   finale.countdown(s.phase === "live" && view.mode === "paused" ? s.rules.lastMove + DEFAULTS.idleWindow - s.t : null);
   if (s.phase === "ended" && !demoCelebrated) { demoCelebrated = true; celebrateDemo(); }
   if (demoPhase === "lobby" && s.phase === "live") {
@@ -834,7 +842,7 @@ setInterval(() => {
   if (!demo) {
     const now = Math.floor(Date.now() / 1000), left = liveSecondsLeft(Date.now() / 1000);
     // Count the break down every second, not only when a reading arrives.
-    showTimer(liveView.mode === "paused" && left != null ? { ...liveView, remaining: Math.max(0, Math.ceil(left)) } : liveView, liveRun, now, true);
+    showTimer(preciseView(liveView, Date.now() / 1000), liveRun, now, true);
     finale.countdown(left);
   }
 }, 1000);
