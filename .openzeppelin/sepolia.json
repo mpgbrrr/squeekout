@@ -461,6 +461,476 @@
           ]
         }
       }
+    },
+    "232dfbad9fc5493d4c61417dc62062f00bbf71554eeb1e7af2b9bbeab6fa82ce": {
+      "address": "0x86b8b2EdCb2fa990b8565AdEa13B4fC3a9Bd10C0",
+      "txHash": "0x7368f1995fd94f2c4d1cc0d013b2f6774dea5603f8c59bfede13b439fbba8125",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "sqk",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_contract(IERC20)1999",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:81"
+          },
+          {
+            "label": "watcher",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_address",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:82"
+          },
+          {
+            "label": "squeekCore",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_contract(ISqueekCore)8101",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:84"
+          },
+          {
+            "label": "roundCheckEnabled",
+            "offset": 20,
+            "slot": "2",
+            "type": "t_bool",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:85"
+          },
+          {
+            "label": "coreGenesis",
+            "offset": 21,
+            "slot": "2",
+            "type": "t_uint64",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:86"
+          },
+          {
+            "label": "coreRoundDuration",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_uint64",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:87"
+          },
+          {
+            "label": "defaults",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_struct(Params)8165_storage",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:89"
+          },
+          {
+            "label": "minLobby",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_uint32",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:90"
+          },
+          {
+            "label": "rolloverPool",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_uint256",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:92"
+          },
+          {
+            "label": "gameCount",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_uint256",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:93"
+          },
+          {
+            "label": "games",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_mapping(t_uint256,t_struct(Game)8192_storage)",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:95"
+          },
+          {
+            "label": "entries",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_struct(Entry)8203_storage))",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:96"
+          },
+          {
+            "label": "players",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_mapping(t_uint256,t_array(t_address)dyn_storage)",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:97"
+          },
+          {
+            "label": "exitOrder",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_mapping(t_uint256,t_array(t_address)dyn_storage)",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:98"
+          },
+          {
+            "label": "scheduledExitsValidFrom",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_uint64))",
+            "contract": "SqueekChicken",
+            "src": "contracts/SqueekChicken.sol:100"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)73_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)13_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(ReentrancyGuardStorage)221_storage": {
+            "label": "struct ReentrancyGuardUpgradeable.ReentrancyGuardStorage",
+            "members": [
+              {
+                "label": "_status",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_address)dyn_storage": {
+            "label": "address[]",
+            "numberOfBytes": "32"
+          },
+          "t_contract(IERC20)1999": {
+            "label": "contract IERC20",
+            "numberOfBytes": "20"
+          },
+          "t_contract(ISqueekCore)8101": {
+            "label": "contract ISqueekCore",
+            "numberOfBytes": "20"
+          },
+          "t_enum(Status)8144": {
+            "label": "enum SqueekChicken.Status",
+            "members": [
+              "None",
+              "Lobby",
+              "Live",
+              "Ended",
+              "Settled",
+              "Voided",
+              "RolledOver"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_mapping(t_address,t_struct(Entry)8203_storage)": {
+            "label": "mapping(address => struct SqueekChicken.Entry)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint64)": {
+            "label": "mapping(address => uint64)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_array(t_address)dyn_storage)": {
+            "label": "mapping(uint256 => address[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_struct(Entry)8203_storage))": {
+            "label": "mapping(uint256 => mapping(address => struct SqueekChicken.Entry))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_uint64))": {
+            "label": "mapping(uint256 => mapping(address => uint64))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(Game)8192_storage)": {
+            "label": "mapping(uint256 => struct SqueekChicken.Game)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Entry)8203_storage": {
+            "label": "struct SqueekChicken.Entry",
+            "members": [
+              {
+                "label": "entered",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "left",
+                "type": "t_bool",
+                "offset": 1,
+                "slot": "0"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 2,
+                "slot": "0"
+              },
+              {
+                "label": "enteredAt",
+                "type": "t_uint64",
+                "offset": 3,
+                "slot": "0"
+              },
+              {
+                "label": "exitTime",
+                "type": "t_uint64",
+                "offset": 11,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(Game)8192_storage": {
+            "label": "struct SqueekChicken.Game",
+            "members": [
+              {
+                "label": "p",
+                "type": "t_struct(Params)8165_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "status",
+                "type": "t_enum(Status)8144",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "startTime",
+                "type": "t_uint64",
+                "offset": 1,
+                "slot": "2"
+              },
+              {
+                "label": "lastMove",
+                "type": "t_uint64",
+                "offset": 9,
+                "slot": "2"
+              },
+              {
+                "label": "endCounter",
+                "type": "t_uint64",
+                "offset": 17,
+                "slot": "2"
+              },
+              {
+                "label": "entrants",
+                "type": "t_uint32",
+                "offset": 25,
+                "slot": "2"
+              },
+              {
+                "label": "rolloverIn",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "curvePool",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "sumWeights",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "jackpotEach",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "6"
+              },
+              {
+                "label": "jackpotFromTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "7"
+              },
+              {
+                "label": "firstExitTime",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "7"
+              }
+            ],
+            "numberOfBytes": "256"
+          },
+          "t_struct(Params)8165_storage": {
+            "label": "struct SqueekChicken.Params",
+            "members": [
+              {
+                "label": "buyIn",
+                "type": "t_uint128",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "earliestStart",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "0"
+              },
+              {
+                "label": "idleWindow",
+                "type": "t_uint32",
+                "offset": 24,
+                "slot": "0"
+              },
+              {
+                "label": "grace",
+                "type": "t_uint32",
+                "offset": 28,
+                "slot": "0"
+              },
+              {
+                "label": "jackpotBps",
+                "type": "t_uint16",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "jackpotGroupBps",
+                "type": "t_uint16",
+                "offset": 2,
+                "slot": "1"
+              },
+              {
+                "label": "bountyFlat",
+                "type": "t_uint128",
+                "offset": 4,
+                "slot": "1"
+              },
+              {
+                "label": "minPlayers",
+                "type": "t_uint16",
+                "offset": 20,
+                "slot": "1"
+              },
+              {
+                "label": "maxPlayers",
+                "type": "t_uint16",
+                "offset": 22,
+                "slot": "1"
+              },
+              {
+                "label": "lateEntryWindow",
+                "type": "t_uint32",
+                "offset": 24,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint128": {
+            "label": "uint128",
+            "numberOfBytes": "16"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.ReentrancyGuard": [
+            {
+              "contract": "ReentrancyGuardUpgradeable",
+              "label": "_status",
+              "type": "t_uint256",
+              "src": "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol:43",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
     }
   }
 }

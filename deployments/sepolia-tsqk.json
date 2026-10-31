@@ -3,7 +3,7 @@
   "chainId": 11155111,
   "address": "0x6694d0F614D28d28b0718B7ac10FAa9650cb304E",
   "proxy": "UUPS",
-  "implementation": "0x657B4aDc87813cE2DE496623f17D44841EDda1F9",
+  "implementation": "0x86b8b2EdCb2fa990b8565AdEa13B4fC3a9Bd10C0",
   "sqk": "0xD70d7248F309F3E33695b8582A2fE92DD8eDF233",
   "watcher": "0x38a425429A1CD81Bb776Fe347E47865BC9243687",
   "roundCheckCore": "0x980b4424c007caf7a1f3670b48c8eaef7ebc3d44",
@@ -11,7 +11,14 @@
   "deployTx": "0xaa60f303b1a8c8fbedb9c057c7281fd2d41aab54a0122ab91871e9d48c181f53",
   "block": 12027560,
   "deployedAt": "2026-10-30T15:27:13.048Z",
-  "upgrades": [],
+  "upgrades": [
+    {
+      "from": "0x657B4aDc87813cE2DE496623f17D44841EDda1F9",
+      "to": "0x86b8b2EdCb2fa990b8565AdEa13B4fC3a9Bd10C0",
+      "at": "2026-10-31T01:17:05.498Z",
+      "note": "version 2: auto-off (scheduled exits)"
+    }
+  ],
   "previous": [
     {
       "address": "0x9671C56c3f5234229939A5f696AdaF3f06BdcC4B",
