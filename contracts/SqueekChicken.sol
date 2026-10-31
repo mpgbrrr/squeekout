@@ -152,7 +152,7 @@ contract SqueekChicken is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function version() public pure virtual returns (string memory) {
-        return "2";
+        return "3";
     }
 
     /// @dev Upgrades only between games: never while a game is running or waiting for its payouts.
@@ -306,6 +306,20 @@ contract SqueekChicken is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         entries[id][msg.sender].claimed = true;
         sqk.safeTransfer(msg.sender, amount);
         emit Claimed(id, msg.sender, amount);
+    }
+
+    /// @notice Version 3: claims winnings and refunds from several games in one transaction. Games with nothing
+    /// to claim are skipped; it reverts only if none of them has anything.
+    function claimAll(uint256[] calldata ids) external nonReentrant returns (uint256 total) {
+        for (uint256 i = 0; i < ids.length; i++) {
+            uint256 amount = claimable(ids[i], msg.sender);
+            if (amount == 0) continue; // also skips a game listed twice: it's claimed the first time
+            entries[ids[i]][msg.sender].claimed = true;
+            total += amount;
+            emit Claimed(ids[i], msg.sender, amount);
+        }
+        if (total == 0) revert NothingToClaim();
+        sqk.safeTransfer(msg.sender, total);
     }
 
     // ------------------------------------------------------------------ watcher

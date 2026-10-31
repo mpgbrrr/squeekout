@@ -114,6 +114,7 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
           log("bot", { bot: bot.name, what: "gas top-up", tx: hash });
         }
       }
+      const owedGames = new Map(); // bot -> game ids it can claim
       for (let id = Math.max(1, gameCount - 2); id <= gameCount; id++) {
         const g = games.get(id);
         if (!g) continue;
@@ -142,9 +143,17 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
             join(`jump on game #${id} late`);
           } else if (["Settled", "Voided", "RolledOver"].includes(g.status) && entered && !left && !claimed) {
             const owed = await pub.readContract({ address: game, abi, functionName: "claimable", args: [BigInt(id), bot.account.address] });
-            if (owed > 0n) run(bot, `claim game #${id}`, () => send(bot, game, abi, "claim", [BigInt(id)]));
+            if (owed > 0n) owedGames.set(bot, [...(owedGames.get(bot) ?? []), id]);
           }
         }
+      }
+      // Half the bots claim each game straight away. The others let winnings pile up and take them in one
+      // claimAll (contract version 3), unless the oldest is about to drop out of the games they look at.
+      const claimAll = owedGames.size && Number(await pub.readContract({ address: game, abi, functionName: "version" }).catch(() => 0)) >= 3;
+      for (const [bot, ids] of owedGames) {
+        const patient = claimAll && bots.indexOf(bot) % 2 === 1;
+        if (patient && ids.length >= 2) run(bot, `claim games #${ids.join(", #")} at once`, () => send(bot, game, abi, "claimAll", [ids.map(BigInt)]));
+        else if (!patient || ids[0] <= gameCount - 2) run(bot, `claim game #${ids[0]}`, () => send(bot, game, abi, "claim", [BigInt(ids[0])]));
       }
     },
 

@@ -432,6 +432,35 @@ describe("SqueekChicken", () => {
     });
   });
 
+  describe("claim all", () => {
+    it("pays winnings and refunds from several games in one transaction, and only once", async () => {
+      const { game, watcher, keeper, players, sqk } = await loadFixture(deploy);
+      const [a, b, c] = players;
+      // Game 1: a wins alone. Game 2: voided, so a is refunded. Game 3: a is caught.
+      const g1 = await createGame(game);
+      for (const pl of [a, b, c]) await game.connect(pl).enter(g1.id);
+      const s1 = g1.p.earliestStart;
+      await at(s1 + 1, () => game.connect(watcher).postStart(g1.id, s1));
+      await at(s1 + 50, () => game.connect(a).exit(g1.id));
+      await at(s1 + 400, () => game.connect(watcher).postEnd(g1.id, s1 + 100, 1));
+      await game.connect(keeper).finalize(g1.id);
+      const g2 = await createGame(game);
+      await game.connect(a).enter(g2.id);
+      await game.connect(watcher).voidGame(g2.id, "test");
+      const g3 = await createGame(game);
+      for (const pl of [a, b, c]) await game.connect(pl).enter(g3.id);
+      const owed1 = await game.claimable(g1.id, a.address);
+      expect(owed1).to.be.gt(0n);
+      const before = await sqk.balanceOf(a.address);
+      await expect(game.connect(a).claimAll([g1.id, g2.id, g3.id, g1.id])).to.emit(game, "Claimed");
+      expect(await sqk.balanceOf(a.address)).to.equal(before + owed1 + BUY);
+      expect(await game.claimable(g1.id, a.address)).to.equal(0n);
+      expect(await game.claimable(g2.id, a.address)).to.equal(0n);
+      await expect(game.connect(a).claimAll([g1.id, g2.id])).to.be.revertedWithCustomError(game, "NothingToClaim");
+      await expect(game.connect(b).claimAll([g2.id, g3.id])).to.be.revertedWithCustomError(game, "NothingToClaim");
+    });
+  });
+
   describe("scheduled exits", () => {
     const types = { ScheduledExit: [
       { name: "gameId", type: "uint256" }, { name: "player", type: "address" },

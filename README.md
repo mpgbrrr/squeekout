@@ -24,6 +24,7 @@ Everyone buys in with SQK while the lobby is open. The game starts the moment th
 | Jackpot | **20%** of the pot is shared by the **last 10%** of winners (at least one) |
 | Everyone else who got off in time | Shares the other 80% by weight |
 | Everyone caught | The pot rolls into the next game |
+| Claiming | Winnings and refunds wait in the contract until you claim them. Several games on this contract are claimed together in one transaction (claim all) |
 | House fee | None |
 | Payout bounty | A flat SQK amount to whoever finalizes the game, capped at **1%** of the pot |
 | Feed outage | If Squeekchain's live feed drops: the game can't end while it's down. When it returns, the game carries on if the hamster didn't run during the gap, or if the gap was too short to hide a 3-minute stop. Otherwise the game is **voided and everyone refunded**. An outage over **30 minutes** also voids it. |

@@ -478,14 +478,21 @@ async function updateUnclaimed(currentId) {
   try { owed = await pub.multicall({ contracts: calls, allowFailure: false }); } catch { owed = await Promise.all(calls.map((c) => pub.readContract(c).catch(() => 0n))); }
   const box = $("unclaimed");
   const items = spots.map((x, i) => ({ ...x, owed: owed[i] })).filter((x) => x.owed > 0n);
+  // This contract's games go in one claim (claimAll, from version 3); earlier contracts pay one game at a time.
+  const here = items.filter((x) => !x.previous);
+  const claimAll = here.length > 1 && Number(await pub.readContract({ address: GAME, abi, functionName: "version" }).catch(() => 0)) >= 3;
+  const button = (text, run) => {
+    const b = Object.assign(document.createElement("button"), { className: "secondary", textContent: text });
+    b.onclick = async () => { b.disabled = true; try { await run(); } finally { unclaimedCheckedAt = 0; await updateUnclaimed(currentId); } };
+    return b;
+  };
+  const total = here.reduce((a, x) => a + x.owed, 0n);
   box.hidden = !items.length;
   box.replaceChildren(...(items.length ? [Object.assign(document.createElement("p"), { textContent: "You have winnings to claim" })] : []),
-    ...items.map(({ address, id, previous, owed: amt }) => {
-      const b = Object.assign(document.createElement("button"), { className: "secondary",
-        textContent: `Claim ${sqk(amt)} from game #${id}${previous ? " (previous contract)" : ""}` });
-      b.onclick = async () => { b.disabled = true; try { await tx("claim", [id], address); } finally { unclaimedCheckedAt = 0; await updateUnclaimed(currentId); } };
-      return b;
-    }));
+    ...(claimAll ? [button(`Claim ${sqk(total)} from ${here.length} games (#${here.map((x) => x.id).reverse().join(", #")})`,
+      () => tx("claimAll", [here.map((x) => x.id)]))] : []),
+    ...items.filter((x) => x.previous || !claimAll).map(({ address, id, previous, owed: amt }) =>
+      button(`Claim ${sqk(amt)} from game #${id}${previous ? " (previous contract)" : ""}`, () => tx("claim", [id], address))));
 }
 const caughtLine = (who, rolledOver, pot) => (rolledOver ? `Everyone was caught, so the ${pot} pot rolls into the next game.`
   : who.length ? `Caught on the wheel: ${who.join(", ")}` : "Nobody got caught!");
