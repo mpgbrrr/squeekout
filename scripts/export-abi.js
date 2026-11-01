@@ -1,10 +1,13 @@
-// Copies the compiled SqueekChicken ABI to web/abi.json, which the watcher and the web app both load.
+// Copies the compiled game ABIs to web/, which the watcher and the web app both load: web/abi.json for the paid
+// game (SqueekChicken) and web/abi-holders.json for the free holders game (SqueekHolders).
 // Run after `npx hardhat compile`.
 const fs = require("node:fs");
 const path = require("node:path");
 
-const artifact = require("../artifacts/contracts/SqueekChicken.sol/SqueekChicken.json");
-const out = path.join(__dirname, "..", "web", "abi.json");
-fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, JSON.stringify(artifact.abi, null, 2) + "\n");
-console.log(`Wrote ${artifact.abi.length} ABI entries to web/abi.json`);
+for (const [name, file] of [["SqueekChicken", "abi.json"], ["SqueekHolders", "abi-holders.json"]]) {
+  const artifact = require(`../artifacts/contracts/${name}.sol/${name}.json`);
+  const out = path.join(__dirname, "..", "web", file);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, JSON.stringify(artifact.abi, null, 2) + "\n");
+  console.log(`Wrote ${artifact.abi.length} ABI entries to web/${file}`);
+}
