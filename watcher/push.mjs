@@ -74,7 +74,7 @@ export function createPush({ file, publicKey, privateKey, subject = "https://squ
 
     /** Alerts everyone subscribed that game `id` just started; players in it get a personal message, and
      * everyone else hears they can still jump on while late entries are open. */
-    async gameStarted({ id, players, lateEntryWindow = 0 }) {
+    async gameStarted({ id, players, lateEntryWindow = 0, free = false }) {
       if (!enabled || !subs.length) return 0;
       const inGame = new Set(players.map((p) => p.toLowerCase()));
       let sent = 0;
@@ -83,7 +83,7 @@ export function createPush({ file, publicKey, privateKey, subject = "https://squ
         const ok = await notify(sub, mine
           ? { title: "🐹 You're on the wheel!", body: `Squeektoshi just started running: game #${id} is live. Get off before he stops.`, tag: `squeekout-game-${id}`, url: "/" }
           : { title: "🐹 Squeektoshi is running!", tag: `squeekout-game-${id}`, url: "/", body: lateEntryWindow
-        ? `Game #${id} just started. Jump on in the next ${Math.round(lateEntryWindow / 60) || 1} min, before anyone gets off.`
+        ? `Game #${id} just started.${free ? " Free for Squeek holders:" : ""} Jump on in the next ${Math.round(lateEntryWindow / 60) || 1} min, before anyone gets off.`
         : `Game #${id} just started. Watch it live, and catch the next lobby.` });
         if (ok) sent++;
       }

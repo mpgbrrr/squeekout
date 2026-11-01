@@ -27,6 +27,7 @@ import { DEFAULTS, newGameState, readingFromStatus, step, trackRun } from "../sh
 import { createBots, isTestToken } from "./bots.mjs";
 import { createPush } from "./push.mjs";
 import { createScheduledExits } from "./scheduled-exits.mjs";
+import { createSqueekIndex } from "./squeek-index.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const env = process.env;
@@ -55,9 +56,15 @@ if (!GAME || !env.WATCHER_PRIVATE_KEY) {
   process.exit(1);
 }
 
-const abi = JSON.parse(readFileSync(join(ROOT, "web", "abi.json"), "utf8"));
 const account = privateKeyToAccount(env.WATCHER_PRIVATE_KEY);
 const pub = createPublicClient({ chain, transport: http(RPC) });
+// Which game GAME_ADDRESS is: the paid game (SqueekChicken) or the free holders game (SqueekHolders), which
+// says so with kind(). Earlier paid contracts (PREVIOUS_GAMES) always use the paid game's ABI.
+const paidAbi = JSON.parse(readFileSync(join(ROOT, "web", "abi.json"), "utf8"));
+const holdersAbi = JSON.parse(readFileSync(join(ROOT, "web", "abi-holders.json"), "utf8"));
+const KIND = await pub.readContract({ address: GAME, abi: holdersAbi, functionName: "kind" }).catch(() => "paid");
+const HOLDERS = KIND === "holders";
+const abi = HOLDERS ? holdersAbi : paidAbi;
 const wallet = createWalletClient({ account, chain, transport: http(RPC) });
 const Status = ["None", "Lobby", "Live", "Ended", "Settled", "Voided", "RolledOver"];
 
@@ -81,10 +88,16 @@ const scheduledExits = createScheduledExits({
 });
 async function checkScheduledExits() {
   const v = await pub.readContract({ address: GAME, abi, functionName: "version" }).catch(() => "0");
-  const live = Number(v) >= 2;
+  const live = HOLDERS || Number(v) >= 2; // the holders game had them from its first version
   if (live !== scheduledExitsLive) log("scheduled_exits", { on: live, contractVersion: v });
   scheduledExitsLive = live;
 }
+
+// Holders game: an index of who holds which Squeek (in a wallet or staked), so the page can pick a player's
+// Squeek for them. The contract checks ownership itself on entry.
+const STAKING = HOLDERS ? await pub.readContract({ address: GAME, abi, functionName: "staking" }) : null;
+const squeeks = HOLDERS ? createSqueekIndex({ pub, staking: STAKING, log: (...a) => log(...a) }) : null;
+let collections = [];
 
 // Test players (BOTS, default 5; 0 turns them off). Only for games played with the free test token.
 let bots = null;
@@ -148,7 +161,7 @@ async function alertStart(id) {
       pub.readContract({ address: GAME, abi, functionName: "getPlayers", args: [BigInt(id)] }),
     ]);
     if (Number(g.entrants) < Number(g.p.minPlayers)) return;
-    const sent = await push.gameStarted({ id, players, lateEntryWindow: Number(g.p.lateEntryWindow ?? 0) });
+    const sent = await push.gameStarted({ id, players, lateEntryWindow: Number(g.p.lateEntryWindow ?? 0), free: HOLDERS });
     log("start_alerts_sent", { game: id, sent, subscribers: push.count });
   } catch (e) {
     log("start_alerts_failed", { game: id, error: String(e.shortMessage || e.message || e) });
@@ -209,7 +222,7 @@ async function refreshGames() {
   for (let id = from; id <= count; id++) {
     const g = await pub.readContract({ address: GAME, abi, functionName: "getGame", args: [BigInt(id)] });
     const status = Status[Number(g.status)];
-    chainGames.set(id, { status, p: g.p, startTime: Number(g.startTime) });
+    chainGames.set(id, { status, p: g.p, startTime: Number(g.startTime), lastMove: Number(g.lastMove) });
     const key = String(id);
     if (status === "Lobby" || status === "Live" || status === "Ended") {
       if (!saved.games[key]) {
@@ -264,7 +277,8 @@ async function tryFinalize(id) {
     log("finalized", { game: Number(id), tx: hash });
   } catch (e) {
     const msg = String(e.shortMessage || e.message || e);
-    if (!/RoundCheckPending/.test(msg)) log("finalize_retry", { game: Number(id), error: msg });
+    const reason = [e.cause?.data?.errorName, msg].filter(Boolean).join(" · ");
+    if (!/RoundCheckPending|EarlierGameFirst/.test(reason)) log("finalize_retry", { game: Number(id), error: reason.slice(0, 200) });
   }
 }
 
@@ -277,7 +291,7 @@ async function openNextIfIdle() {
     if (!["Ended", "Settled", "Voided", "RolledOver"].includes(Status[Number(g.status)])) return;
   }
   const defaults = await pub.readContract({ address: GAME, abi, functionName: "defaults" });
-  if (!defaults[0]) return; // buyIn 0: defaults not set yet
+  if (!(HOLDERS ? defaults[1] : defaults[0])) return; // idleWindow (holders) or buyIn (paid) 0: defaults not set yet
   try {
     const hash = await send("openNextGame", []);
     log("opened", { game: count + 1, tx: hash });
@@ -304,7 +318,7 @@ const oldGetGame = (params) => [{ type: "function", name: "getGame", stateMutabi
   { name: "sumWeights", type: "uint256" }, { name: "jackpotEach", type: "uint256" }, { name: "jackpotFromTime", type: "uint64" }] }] }];
 const OLD_LAYOUTS = [oldGetGame(p([])), oldGetGame(p([{ name: "curveStep", type: "uint32" }]))];
 async function previousGameStatus(address, id) {
-  for (const layout of [abi, ...OLD_LAYOUTS]) {
+  for (const layout of [paidAbi, ...OLD_LAYOUTS]) {
     const g = await pub.readContract({ address, abi: layout, functionName: "getGame", args: [id] }).catch(() => null);
     if (g && Status[Number(g.status)]) return Status[Number(g.status)];
   }
@@ -315,13 +329,13 @@ async function retirePreviousLobbies() {
     if (retired.has(address)) continue;
     try {
       const [count, theirWatcher] = await Promise.all([
-        pub.readContract({ address, abi, functionName: "gameCount" }),
-        pub.readContract({ address, abi, functionName: "watcher" }),
+        pub.readContract({ address, abi: paidAbi, functionName: "gameCount" }),
+        pub.readContract({ address, abi: paidAbi, functionName: "watcher" }),
       ]);
       if (theirWatcher.toLowerCase() !== account.address.toLowerCase()) { retired.add(address); continue; }
       const status = count > 0n ? await previousGameStatus(address, count) : null;
       if (status === "Lobby") {
-        const { request } = await pub.simulateContract({ account, address, abi, functionName: "voidGame", args: [count, "moved to a new game contract"] });
+        const { request } = await pub.simulateContract({ account, address, abi: paidAbi, functionName: "voidGame", args: [count, "moved to a new game contract"] });
         const hash = await wallet.writeContract(request);
         await pub.waitForTransactionReceipt({ hash, timeout: 120_000 });
         log("previous_lobby_voided", { contract: address, game: Number(count), tx: hash });
@@ -365,10 +379,17 @@ async function chainWork() {
     await refreshGames();
     for (const [id, game] of Object.entries(saved.games)) {
       if (game.queue.length) await act(id, game);
-      if (game.status === "Ended" && !game.queue.length) await tryFinalize(id);
+      // The holders game pays out only once the run's rewards have had prizeDelay to arrive.
+      const g = chainGames.get(Number(id));
+      const due = !HOLDERS || (g && Date.now() / 1000 >= g.lastMove + Number(g.p.prizeDelay));
+      if (game.status === "Ended" && !game.queue.length && due) await tryFinalize(id);
     }
     await openNextIfIdle();
     await checkScheduledExits();
+    if (squeeks) {
+      collections = await pub.readContract({ address: GAME, abi, functionName: "getCollections" });
+      squeeks.refresh(collections).catch(() => {}); // a full scan takes a few seconds: don't hold up the round
+    }
     if (scheduledExitsLive) await scheduledExits.chainWork();
     await retirePreviousLobbies();
     if (bots) await bots.chainWork(Math.max(0, ...chainGames.keys()), chainGames);
@@ -410,6 +431,12 @@ createServer(async (req, res) => {
     res.writeHead(result.ok ? 200 : 400, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify(result));
   }
+  const squeekPath = /^\/squeeks\/(0x[0-9a-fA-F]{40})$/.exec(url.pathname);
+  if (squeekPath) {
+    const list = squeeks ? await squeeks.squeeksOf(squeekPath[1]).catch(() => []) : [];
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    return res.end(JSON.stringify(list));
+  }
   if (url.pathname === "/log") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify(recent.slice(-200)));
@@ -424,7 +451,8 @@ createServer(async (req, res) => {
   if (url.pathname === "/config.json") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify({ gameAddress: GAME, chainId: chain.id, rpcUrl: RPC, squeekApi: API, watcher: account.address, bots: bots?.list() ?? [],
-      streamBroadcastId: STREAM_BROADCAST_ID, previousGames: PREVIOUS_GAMES, vapidPublicKey: push.publicKey, scheduledExits: scheduledExitsLive }));
+      streamBroadcastId: STREAM_BROADCAST_ID, previousGames: PREVIOUS_GAMES, vapidPublicKey: push.publicKey, scheduledExits: scheduledExitsLive,
+      kind: KIND, staking: STAKING, collections }));
   }
   const rel = url.pathname === "/" ? "/web/index.html" : url.pathname.startsWith("/shared/") ? url.pathname : `/web${url.pathname}`;
   const file = normalize(join(ROOT, rel));

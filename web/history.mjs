@@ -8,7 +8,8 @@ import { countsInPot } from "/shared/payouts.js";
 
 const $ = (id) => document.getElementById(id);
 const cfg = await (await fetch("/config.json")).json();
-const abi = await (await fetch("/abi.json")).json();
+const HOLDERS = cfg.kind === "holders"; // the free holders game: no buy-ins, the prize comes from staked Squeeks
+const abi = await (await fetch(HOLDERS ? "/abi-holders.json" : "/abi.json")).json();
 const GAME = cfg.gameAddress;
 const chain = cfg.chainId === hardhat.id ? hardhat : sepolia;
 const pub = createPublicClient({ chain, transport: http(cfg.rpcUrl) });
@@ -79,14 +80,14 @@ const LABEL = {
 function card({ id, g, players }) {
   const status = Status[g.status], start = Number(g.startTime), lastMove = Number(g.lastMove);
   const [label, cls] = LABEL[status] || [status, ""];
-  const pot = g.p.buyIn * BigInt(players.filter((p) => inPot({ g }, p)).length) + g.rolloverIn;
+  const pot = HOLDERS ? g.prize : g.p.buyIn * BigInt(players.filter((p) => inPot({ g }, p)).length) + g.rolloverIn;
   const name = (p) => escapeHtml(names.playerName(p.addr)) + (me && p.addr.toLowerCase() === me ? " (you)" : "");
   const youCls = (p) => (me && p.addr.toLowerCase() === me ? ' class="mine"' : "");
   const facts = [
     start ? `Started <b>${when(start)}</b>` : "",
     start && lastMove ? `Ran <b>${mmss(lastMove - start)}</b>` : "",
     `Players <b>${players.filter((p) => inPot({ g }, p)).length}</b>`,
-    `Pot <b>${amount(pot)}</b>`,
+    HOLDERS ? (["Settled", "RolledOver"].includes(status) ? `Prize <b>${amount(pot)}</b>` : "") : `Pot <b>${amount(pot)}</b>`,
   ].filter(Boolean).join("");
   let body = "";
   if (status === "Settled") {
@@ -101,10 +102,11 @@ function card({ id, g, players }) {
       + `<td>${p.exitTime ? `+${mmss(p.exitTime - start)}<small>too late</small>` : "<small>never got off</small>"}${joined(p, start)}</td><td class="pay caught">Caught</td></tr>`).join("")
     }</tbody></table>`;
   } else if (status === "RolledOver") {
-    body = `<p class="muted">Everyone was still on the wheel when he stopped, so the pot rolled into the next game. Caught: ${
+    body = `<p class="muted">Everyone was still on the wheel when he stopped, so the ${HOLDERS ? "prize" : "pot"} rolled into the next game. Caught: ${
       players.filter((p) => inPot({ g }, p)).map(name).join(", ") || "nobody"}.</p>`;
   } else if (status === "Voided") {
-    body = `<p class="muted">${players.length ? `Everyone got their buy-in back (${players.length} player${players.length === 1 ? "" : "s"}).` : "Nobody had joined."}</p>`;
+    body = `<p class="muted">${!players.length ? "Nobody had joined." : HOLDERS ? `Voided: no prize this time; it carries over to the next game (${players.length} player${players.length === 1 ? "" : "s"}).`
+      : `Everyone got their buy-in back (${players.length} player${players.length === 1 ? "" : "s"}).`}</p>`;
   } else {
     body = `<p class="muted">${status === "Ended" ? "He has stopped; payouts are being finalized." : "In progress."} <a href="/">Watch on the game page</a>.</p>`;
   }

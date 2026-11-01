@@ -61,6 +61,8 @@ contract SqueekChickenV2Mock is SqueekChicken {
 
 /// @notice Stand-in Squeek NFT for tests.
 contract MockNFT is ERC721 {
+    uint256 public constant MAX_SUPPLY = 200;
+
     constructor() ERC721("Squeek", "SQUEEK") {}
 
     function mint(address to, uint256 tokenId) external {

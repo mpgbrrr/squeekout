@@ -1,8 +1,9 @@
 // Fake Squeekchain /v1/status: the hamster runs from RUN_FROM to RUN_TO (unix seconds), then stops.
 // Like the real device, readings arrive every 10 s.
 import { createServer } from "node:http";
-const [runFrom, runTo] = process.argv.slice(2).map(Number);
-let counter = 1000;
+// An optional third argument sets the counter's starting value (above the last run's, when restarting).
+const [runFrom, runTo, base] = process.argv.slice(2).map(Number);
+let counter = base || 1000;
 const reading = () => {
   const now = Math.floor(Date.now() / 1000);
   const tick = now - (now % 10);

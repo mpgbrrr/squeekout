@@ -15,7 +15,11 @@ const $ = (id) => document.getElementById(id);
 // Browser storage that never throws (private windows, blocked storage).
 const store = (kind, key, value) => { try { return value === undefined ? window[kind].getItem(key) : window[kind].setItem(key, value); } catch { return null; } };
 const cfg = await (await fetch("/config.json")).json();
-const abi = await (await fetch("/abi.json")).json();
+// The free holders game (SqueekHolders) or the paid game (SqueekChicken): the watcher says which.
+const HOLDERS = cfg.kind === "holders";
+const abi = await (await fetch(HOLDERS ? "/abi-holders.json" : "/abi.json")).json();
+for (const el of document.querySelectorAll("[data-kind]")) el.hidden = el.dataset.kind !== (HOLDERS ? "holders" : "paid");
+if (HOLDERS) $("leave").textContent = "Leave lobby";
 const erc20 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
@@ -297,6 +301,8 @@ async function loadGame() {
   // The entries getter returns a plain list; name its fields.
   const entry = ([entered, left, claimed, enteredAt, exitTime]) => ({ entered, left, claimed, enteredAt, exitTime });
   game = { id, ...g, players: players.map((p, i) => ({ addr: p, entry: entry(results[2 * i]), claimable: results[2 * i + 1] })) };
+  // Holders game: the prize builds up from the game's staked Squeeks until it's paid out.
+  if (HOLDERS) game.prizeSoFar = await pub.readContract({ address: GAME, abi, functionName: "prizeSoFar" }).catch(() => 0n);
   // The game ended while this page was open: celebrate, if the feed didn't already trigger it.
   const status = Status[Number(g.status)], before = seenStatus.get(id);
   seenStatus.set(id, status);
@@ -324,18 +330,32 @@ function render() {
   const lobby = status === "Lobby";
   const started = ["Live", "Ended", "Settled", "RolledOver"].includes(status);
   const start = Number(g.startTime);
-  const late = (e) => started && Number(e.enteredAt) > start && !countsInPot(entryTimes(e), potRules(g)); // joined too late: refunded
+  const late = (e) => started && Number(e.enteredAt) > start && !countsInPot(entryTimes(e), potRules(g)); // joined too late: not in the game
+  const prizeAt = HOLDERS && Number(g.lastMove) ? Number(g.lastMove) + Number(g.p.prizeDelay) : null; // when the prize can be paid out
   const lateLeft = lateEntryLeft(g, now);
   const leftEarly = (e) => started && Number(e.exitTime) && Number(e.exitTime) < start;
   $("gameTitle").textContent = `Game #${g.id}`;
-  $("gameStatus").textContent = {
+  $("gameStatus").textContent = HOLDERS ? {
+    Lobby: "Lobby open: free for Squeek holders. The game starts when Squeektoshi runs",
+    Live: lateLeft != null ? `Live: late entries open for ${mmss(lateLeft)}, or until someone gets off` : "Live: the wheel is turning",
+    Ended: prizeAt > now ? `Game over: prize pays out at ${clock(prizeAt)}, once the run's rewards are in` : "Game over: paying out the prize",
+    Settled: "Paid out", Voided: "Voided: no prize this time (it carries over)", RolledOver: "Everyone caught: the prize rolls over",
+  }[status] : {
     Lobby: "Lobby open: the game starts when Squeektoshi runs",
     Live: lateLeft != null ? `Live: late entries open for ${mmss(lateLeft)}, or until someone gets off` : "Live: the wheel is turning", Ended: "Game over: finalizing payouts", Settled: "Paid out",
     Voided: "Voided: everyone refunded", RolledOver: "Everyone caught: pot rolled over",
   }[status];
   const inPot = g.players.filter((p) => !p.entry.left && !late(p.entry) && !leftEarly(p.entry)).length;
-  $("fBuyIn").textContent = sqk(g.p.buyIn);
-  $("fPot").textContent = sqk(g.p.buyIn * BigInt(inPot) + g.rolloverIn);
+  if (HOLDERS) {
+    const paid = status === "Settled" || status === "RolledOver";
+    $("fBuyIn").textContent = "Free";
+    $("fBuyInLbl").textContent = "Entry (Squeek holders)";
+    $("fPot").textContent = sqk(paid ? g.prize : g.prizeSoFar ?? 0n);
+    $("fPotLbl").textContent = paid ? "Prize" : "Prize so far";
+  } else {
+    $("fBuyIn").textContent = sqk(g.p.buyIn);
+    $("fPot").textContent = sqk(g.p.buyIn * BigInt(inPot) + g.rolloverIn);
+  }
   $("fPlayers").textContent = String(inPot);
   const earliest = Number(g.p.earliestStart);
   if (lobby && now < earliest) { $("fClockLbl").textContent = "Can start in"; $("fClock").textContent = mmss(earliest - now); }
@@ -349,7 +369,7 @@ function render() {
   $("players").innerHTML = g.players.length ? g.players.map((p) => {
     const e = p.entry;
     const joinedLate = started && Number(e.enteredAt) > start ? ` · joined +${mmss(Number(e.enteredAt) - start)}` : "";
-    const off = e.left ? "left the lobby" : late(e) ? "joined too late (refunded)" : leftEarly(e) ? "left before the start (refunded)"
+    const off = e.left ? "left the lobby" : late(e) ? `joined too late${HOLDERS ? "" : " (refunded)"}` : leftEarly(e) ? `left before the start${HOLDERS ? "" : " (refunded)"}`
       : (Number(e.exitTime) ? (start ? `+${mmss(Math.max(0, Number(e.exitTime) - start))}` : clock(Number(e.exitTime)))
         + (over && Number(e.exitTime) > Number(g.lastMove) + Number(g.p.grace) ? " · too late" : "")
       : over ? "never got off" : "still on") + joinedLate;
@@ -364,7 +384,7 @@ function render() {
   const caught = g.players.filter((p) => !p.entry.left && !late(p.entry) && !leftEarly(p.entry)
     && (!Number(p.entry.exitTime) || Number(p.entry.exitTime) > lastMove + Number(g.p.grace))).length;
   const hudCount = lobby ? g.players.filter((p) => !p.entry.left).length : status === "Live" ? stillOn : caught;
-  const hudLabel = lobby ? "in the lobby" : status === "Live" ? "still on" : status === "Voided" ? "refunded" : "caught";
+  const hudLabel = lobby ? "in the lobby" : status === "Live" ? "still on" : status === "Voided" ? (HOLDERS ? "voided" : "refunded") : "caught";
   const events = [...liveMoments.list];
   for (const p of g.players) {
     if (Number(p.entry.enteredAt)) events.push({ t: Number(p.entry.enteredAt), text: `${who(p)} joined` });
@@ -379,7 +399,7 @@ function render() {
     if (closedAt <= now) events.push({ t: closedAt + 0.5, text: "Entries closed", kind: "ham" });
   }
   if (lastMove) events.push(gameOver(events, lastMove - start, caught));
-  if (status === "Voided") events.push({ t: now, text: "Game voided: everyone refunded", kind: "bad" });
+  if (status === "Voided") events.push({ t: now, text: HOLDERS ? "Game voided: no prize this time" : "Game voided: everyone refunded", kind: "bad" });
   renderHud(hudCount, lobby ? null : inPot, hudLabel, events, (t) => (start && t >= start ? `+${mmss(t - start)}` : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
 
   const mine = me && g.players.find((p) => p.addr.toLowerCase() === me.toLowerCase());
@@ -388,7 +408,7 @@ function render() {
   const btn = $("mainAction");
   $("leave").hidden = !inLobby;
   $("faucet").hidden = !(TEST_TOKEN && me);
-  $("finalize").hidden = status !== "Ended";
+  $("finalize").hidden = status !== "Ended" || (prizeAt != null && prizeAt > now);
   btn.disabled = false;
   if (!me) { btn.textContent = "Connect to play"; btn.onclick = connect; $("youStatus").textContent = "Connect your wallet to play."; return; }
   if (mine && mine.claimable > 0n) {
@@ -397,10 +417,12 @@ function render() {
       : late(mine.entry) ? "Your entry landed after Squeektoshi started running, so it's refunded."
       : leftEarly(mine.entry) ? "You left before the start, so your buy-in is refunded." : "You got off in time.";
   } else if (lobby && (!mine || mine.entry.left)) {
-    btn.textContent = `Enter for ${sqk(g.p.buyIn)}`; btn.onclick = () => enter(g);
-    $("youStatus").textContent = "Buy in before Squeektoshi starts running. Then get off the wheel before he stops: the longer you stay, the more you win.";
+    btn.textContent = HOLDERS ? "Enter free with your Squeek" : `Enter for ${sqk(g.p.buyIn)}`; btn.onclick = () => enter(g);
+    $("youStatus").textContent = HOLDERS
+      ? "Free for anyone holding a Squeek, in their wallet or staked. Join before Squeektoshi starts running, then get off before he stops: the longer you stay, the bigger your share."
+      : "Buy in before Squeektoshi starts running. Then get off the wheel before he stops: the longer you stay, the more you win.";
   } else if (lateLeft != null && (!mine || mine.entry.left)) {
-    btn.textContent = `Jump on for ${sqk(g.p.buyIn)}`; btn.onclick = () => enter(g);
+    btn.textContent = HOLDERS ? "Jump on free with your Squeek" : `Jump on for ${sqk(g.p.buyIn)}`; btn.onclick = () => enter(g);
     $("youStatus").textContent = `He's running! Late entries are open for ${mmss(lateLeft)} more, or until someone gets off. Your time on the wheel counts from when you get on.`;
   } else if (inLobby) {
     btn.textContent = "You're in"; btn.disabled = true;
@@ -480,7 +502,7 @@ async function updateUnclaimed(currentId) {
   const items = spots.map((x, i) => ({ ...x, owed: owed[i] })).filter((x) => x.owed > 0n);
   // This contract's games go in one claim (claimAll, from version 3); earlier contracts pay one game at a time.
   const here = items.filter((x) => !x.previous);
-  const claimAll = here.length > 1 && Number(await pub.readContract({ address: GAME, abi, functionName: "version" }).catch(() => 0)) >= 3;
+  const claimAll = here.length > 1 && (HOLDERS || Number(await pub.readContract({ address: GAME, abi, functionName: "version" }).catch(() => 0)) >= 3);
   const button = (text, run) => {
     const b = Object.assign(document.createElement("button"), { className: "secondary", textContent: text });
     b.onclick = async () => { b.disabled = true; try { await run(); } finally { unclaimedCheckedAt = 0; await updateUnclaimed(currentId); } };
@@ -508,7 +530,9 @@ function celebrateLive(lastMove) {
   celebrated.add(g.id);
   const exits = inGame.filter((p) => Number(p.entry.exitTime)).sort((a, b) => Number(a.entry.exitTime) - Number(b.entry.exitTime))
     .map((p) => ({ id: p.addr.toLowerCase(), t: Number(p.entry.exitTime) - start, from: Math.max(0, Number(p.entry.enteredAt) - start) }));
-  const r = settle({ buyIn: Number(formatUnits(g.p.buyIn, 18)), inPot: inGame.length, rollover: Number(formatUnits(g.rolloverIn, 18)), exits, lastMove: lastMove - start });
+  const r = HOLDERS
+    ? settle({ buyIn: 0, inPot: inGame.length, rollover: Number(formatUnits(g.prizeSoFar ?? 0n, 18)), exits, lastMove: lastMove - start })
+    : settle({ buyIn: Number(formatUnits(g.p.buyIn, 18)), inPot: inGame.length, rollover: Number(formatUnits(g.rolloverIn, 18)), exits, lastMove: lastMove - start });
   const isMe = (p) => me && p.addr.toLowerCase() === me.toLowerCase();
   const name = (p) => (isMe(p) ? "You" : playerName(p.addr));
   const amount = (n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${SYMBOL}`;
@@ -788,7 +812,24 @@ async function tx(functionName, args, address = GAME, contractAbi = abi) {
   }
 }
 
+// Holders game: enter with a Squeek this wallet holds or has staked. The watcher's index finds them; the
+// contract checks ownership itself.
+async function enterWithSqueek(g) {
+  msg("Looking for your Squeek…");
+  const mine = await (await fetch(`/squeeks/${me}`, { cache: "no-store" })).json().catch(() => []);
+  const used = await Promise.all(mine.map((s) => pub.readContract({ address: GAME, abi, functionName: "squeekUsed", args: [g.id, s.collection, BigInt(s.tokenId)] }).catch(() => false)));
+  const free = mine.filter((_, i) => !used[i]);
+  if (!free.length) {
+    msg(mine.length ? "Your Squeeks have already entered this game from another wallet." : "No Squeek found in this wallet or staked by it. The free game is for Squeek holders. Just bought or staked one? Try again in a minute.", true);
+    return;
+  }
+  const s = free.find((x) => !x.staked) ?? free[0];
+  msg(`Entering with Squeek #${s.tokenId}${s.staked ? " (staked)" : ""}…`);
+  await tx("enter", [g.id, s.collection, BigInt(s.tokenId)]);
+}
+
 async function enter(g) {
+  if (HOLDERS) return enterWithSqueek(g);
   const [bal, allowance] = await Promise.all([
     pub.readContract({ address: SQK, abi: erc20, functionName: "balanceOf", args: [me] }),
     pub.readContract({ address: SQK, abi: erc20, functionName: "allowance", args: [me, GAME] }),

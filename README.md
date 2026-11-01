@@ -30,6 +30,28 @@ Everyone buys in with SQK while the lobby is open. The game starts the moment th
 | Feed outage | If Squeekchain's live feed drops: the game can't end while it's down. When it returns, the game carries on if the hamster didn't run during the gap, or if the gap was too short to hide a 3-minute stop. Otherwise the game is **voided and everyone refunded**. An outage over **30 minutes** also voids it. |
 | Backstop | If a game can't finish within 7 days of its earliest start, anyone can refund it |
 
+## Free holders game
+
+A second version of the game, `contracts/SqueekHolders.sol`, is free to play for Squeek holders. The paid game above stays as it is.
+
+| Rule | Value |
+|---|---|
+| Entry | Free, one per wallet, for anyone holding an official Squeek in their wallet or staked in Squeekchain's staking. Each Squeek can enter only one wallet per game (so passing one Squeek around gets no extra entries; someone who spreads several Squeeks across wallets gets at most one entry per Squeek) |
+| Collections | Genesis Squeeks from the start. The owner can add a collection without an upgrade (`setCollection`), but only one Squeekchain's staking recognizes, such as clones once they launch |
+| Prize | The game's own Squeeks, staked through `ChickenTreasury`, earn SQK while he runs. Each game's prize is half of what they earned since the previous game paid out; the other half goes to the developer. It's paid out `prizeDelay` (40 min) after he stops, once the run's rewards have streamed in, and games pay out in order |
+| Everything else | As the paid game: late entries, time-on-the-wheel payouts and the 20% jackpot, Auto-off, claim all, start alerts. Everyone caught or a voided game: the prize carries over. Minimum 3 players |
+
+The watcher and the page detect which game `GAME_ADDRESS` is (`kind()`) and adapt. For the holders game the watcher also keeps an index of who holds and who has staked which Squeek (`watcher/squeek-index.mjs`: it reads the owner of every token, about 3 seconds for 10,000), so the page can pick a player's Squeek for them; the contract checks ownership itself. Test players don't play it (they hold no Squeeks).
+
+To deploy it:
+
+```sh
+DEPLOYER_PRIVATE_KEY=<owner key> WATCHER_ADDRESS=<watcher address> npx hardhat run scripts/deploy-holders.js --network sepolia
+DEPLOYER_PRIVATE_KEY=<owner key> TOKEN_IDS=12,345 npx hardhat run scripts/treasury-deposit.js --network sepolia
+```
+
+The first writes `deployments/sepolia-holders.json` (game, treasury, staking). The second stakes the owner's Squeeks for the game; the owner can take them back any time with the treasury's `withdrawNfts`, and withdraw the developer's half with `withdrawDev`. Then point the watcher's `GAME_ADDRESS` at the holders game.
+
 ## How it works
 
 ```
