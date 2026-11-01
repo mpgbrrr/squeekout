@@ -6,7 +6,7 @@
 //   STAKING               Squeekchain's SqueekStaking (default: its Sepolia proxy). Its reward token is the prize
 //                         token, and its genesis collection is the first collection whose holders may enter.
 //   SQUEEK_CORE           the SqueekCore that the settled-round check reads (default: Sepolia's; "off" to skip)
-//   MIN_PLAYERS (3), MIN_LOBBY seconds (300), BOUNTY SQK (5), PRIZE_DELAY seconds after he stops before the
+//   MIN_PLAYERS (1 while testing: a game with a single player still runs), MIN_LOBBY seconds (300), BOUNTY SQK (5), PRIZE_DELAY seconds after he stops before the
 //   prize is paid out (2400, so the run's rewards have streamed in)
 //   RECORD                name of the record in deployments/ (default: <network>-holders)
 // Then put the game's Squeeks in the treasury: scripts/treasury-deposit.js.
@@ -47,7 +47,7 @@ async function main() {
     jackpotBps: 2000, // 20% jackpot
     jackpotGroupBps: 1000, // shared by the last 10% of winners
     bountyFlat: ethers.parseEther(env.BOUNTY || "5"),
-    minPlayers: Number(env.MIN_PLAYERS || 3),
+    minPlayers: Number(env.MIN_PLAYERS || 1),
     maxPlayers: 500,
     lateEntryWindow: 120, // entries stay open 2 minutes after the start, until the first exit
     prizeDelay: Number(env.PRIZE_DELAY || 2400),
