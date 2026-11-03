@@ -5,6 +5,11 @@
       "address": "0x6694d0F614D28d28b0718B7ac10FAa9650cb304E",
       "txHash": "0xaa60f303b1a8c8fbedb9c057c7281fd2d41aab54a0122ab91871e9d48c181f53",
       "kind": "uups"
+    },
+    {
+      "address": "0xab42C0778B4756b91991Bf3DD2f1a14E62618764",
+      "txHash": "0x9047e1b03ef85ac771796fc8b8f06bc086ec274a6ea970bf9f8d2318775a8871",
+      "kind": "uups"
     }
   ],
   "impls": {
@@ -1340,6 +1345,560 @@
               },
               {
                 "label": "lateEntryWindow",
+                "type": "t_uint32",
+                "offset": 24,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint128": {
+            "label": "uint128",
+            "numberOfBytes": "16"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.ReentrancyGuard": [
+            {
+              "contract": "ReentrancyGuardUpgradeable",
+              "label": "_status",
+              "type": "t_uint256",
+              "src": "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol:43",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "3874e76ad1a01dfa7bb93e226c827262a18b85d71b2af73d2b0e61f4441d9085": {
+      "address": "0x2D2c010282744f5816e33b1d5eD97d1912B2c236",
+      "txHash": "0x16321e3567a8ce7b6c377fd534253b351cacc77202edc767cd88af3f51f132fb",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "sqk",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_contract(IERC20)1322",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:92"
+          },
+          {
+            "label": "staking",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_contract(ISqueekStaking)6850",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:93"
+          },
+          {
+            "label": "treasury",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_contract(IPrizeTreasury)6886",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:94"
+          },
+          {
+            "label": "watcher",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_address",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:95"
+          },
+          {
+            "label": "squeekCore",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_contract(ISqueekCore)6783",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:97"
+          },
+          {
+            "label": "roundCheckEnabled",
+            "offset": 20,
+            "slot": "4",
+            "type": "t_bool",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:98"
+          },
+          {
+            "label": "coreGenesis",
+            "offset": 21,
+            "slot": "4",
+            "type": "t_uint64",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:99"
+          },
+          {
+            "label": "coreRoundDuration",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_uint64",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:100"
+          },
+          {
+            "label": "defaults",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_struct(Params)6928_storage",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:102"
+          },
+          {
+            "label": "minLobby",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_uint32",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:103"
+          },
+          {
+            "label": "gameCount",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_uint256",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:105"
+          },
+          {
+            "label": "nextToFinalize",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_uint256",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:106"
+          },
+          {
+            "label": "carried",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:107"
+          },
+          {
+            "label": "isCollection",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_mapping(t_address,t_bool)",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:109"
+          },
+          {
+            "label": "collectionList",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_array(t_address)dyn_storage",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:110"
+          },
+          {
+            "label": "games",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_mapping(t_uint256,t_struct(Game)6955_storage)",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:111"
+          },
+          {
+            "label": "entries",
+            "offset": 0,
+            "slot": "15",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_struct(Entry)6970_storage))",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:112"
+          },
+          {
+            "label": "players",
+            "offset": 0,
+            "slot": "16",
+            "type": "t_mapping(t_uint256,t_array(t_address)dyn_storage)",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:113"
+          },
+          {
+            "label": "exitOrder",
+            "offset": 0,
+            "slot": "17",
+            "type": "t_mapping(t_uint256,t_array(t_address)dyn_storage)",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:114"
+          },
+          {
+            "label": "squeekUsed",
+            "offset": 0,
+            "slot": "18",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_mapping(t_uint256,t_bool)))",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:115"
+          },
+          {
+            "label": "scheduledExitsValidFrom",
+            "offset": 0,
+            "slot": "19",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_uint64))",
+            "contract": "SqueekHolders",
+            "src": "contracts/SqueekHolders.sol:116"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)73_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)13_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(ReentrancyGuardStorage)221_storage": {
+            "label": "struct ReentrancyGuardUpgradeable.ReentrancyGuardStorage",
+            "members": [
+              {
+                "label": "_status",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_address)dyn_storage": {
+            "label": "address[]",
+            "numberOfBytes": "32"
+          },
+          "t_contract(IERC20)1322": {
+            "label": "contract IERC20",
+            "numberOfBytes": "20"
+          },
+          "t_contract(IPrizeTreasury)6886": {
+            "label": "contract IPrizeTreasury",
+            "numberOfBytes": "20"
+          },
+          "t_contract(ISqueekCore)6783": {
+            "label": "contract ISqueekCore",
+            "numberOfBytes": "20"
+          },
+          "t_contract(ISqueekStaking)6850": {
+            "label": "contract ISqueekStaking",
+            "numberOfBytes": "20"
+          },
+          "t_enum(Status)6907": {
+            "label": "enum SqueekHolders.Status",
+            "members": [
+              "None",
+              "Lobby",
+              "Live",
+              "Ended",
+              "Settled",
+              "Voided",
+              "RolledOver"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_mapping(t_uint256,t_bool))": {
+            "label": "mapping(address => mapping(uint256 => bool))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(Entry)6970_storage)": {
+            "label": "mapping(address => struct SqueekHolders.Entry)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint64)": {
+            "label": "mapping(address => uint64)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_array(t_address)dyn_storage)": {
+            "label": "mapping(uint256 => address[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_bool)": {
+            "label": "mapping(uint256 => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_mapping(t_uint256,t_bool)))": {
+            "label": "mapping(uint256 => mapping(address => mapping(uint256 => bool)))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_struct(Entry)6970_storage))": {
+            "label": "mapping(uint256 => mapping(address => struct SqueekHolders.Entry))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_uint64))": {
+            "label": "mapping(uint256 => mapping(address => uint64))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(Game)6955_storage)": {
+            "label": "mapping(uint256 => struct SqueekHolders.Game)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Entry)6970_storage": {
+            "label": "struct SqueekHolders.Entry",
+            "members": [
+              {
+                "label": "entered",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "left",
+                "type": "t_bool",
+                "offset": 1,
+                "slot": "0"
+              },
+              {
+                "label": "claimed",
+                "type": "t_bool",
+                "offset": 2,
+                "slot": "0"
+              },
+              {
+                "label": "enteredAt",
+                "type": "t_uint64",
+                "offset": 3,
+                "slot": "0"
+              },
+              {
+                "label": "exitTime",
+                "type": "t_uint64",
+                "offset": 11,
+                "slot": "0"
+              },
+              {
+                "label": "collection",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "tokenId",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "96"
+          },
+          "t_struct(Game)6955_storage": {
+            "label": "struct SqueekHolders.Game",
+            "members": [
+              {
+                "label": "p",
+                "type": "t_struct(Params)6928_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "status",
+                "type": "t_enum(Status)6907",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "startTime",
+                "type": "t_uint64",
+                "offset": 1,
+                "slot": "2"
+              },
+              {
+                "label": "lastMove",
+                "type": "t_uint64",
+                "offset": 9,
+                "slot": "2"
+              },
+              {
+                "label": "endCounter",
+                "type": "t_uint64",
+                "offset": 17,
+                "slot": "2"
+              },
+              {
+                "label": "firstExitTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "entrants",
+                "type": "t_uint32",
+                "offset": 8,
+                "slot": "3"
+              },
+              {
+                "label": "prize",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "curvePool",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "sumWeights",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "6"
+              },
+              {
+                "label": "jackpotEach",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "7"
+              },
+              {
+                "label": "jackpotFromTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "8"
+              }
+            ],
+            "numberOfBytes": "288"
+          },
+          "t_struct(Params)6928_storage": {
+            "label": "struct SqueekHolders.Params",
+            "members": [
+              {
+                "label": "earliestStart",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "idleWindow",
+                "type": "t_uint32",
+                "offset": 8,
+                "slot": "0"
+              },
+              {
+                "label": "grace",
+                "type": "t_uint32",
+                "offset": 12,
+                "slot": "0"
+              },
+              {
+                "label": "jackpotBps",
+                "type": "t_uint16",
+                "offset": 16,
+                "slot": "0"
+              },
+              {
+                "label": "jackpotGroupBps",
+                "type": "t_uint16",
+                "offset": 18,
+                "slot": "0"
+              },
+              {
+                "label": "bountyFlat",
+                "type": "t_uint128",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "minPlayers",
+                "type": "t_uint16",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "maxPlayers",
+                "type": "t_uint16",
+                "offset": 18,
+                "slot": "1"
+              },
+              {
+                "label": "lateEntryWindow",
+                "type": "t_uint32",
+                "offset": 20,
+                "slot": "1"
+              },
+              {
+                "label": "prizeDelay",
                 "type": "t_uint32",
                 "offset": 24,
                 "slot": "1"

@@ -1,0 +1,29 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "kind": "holders",
+  "address": "0xab42C0778B4756b91991Bf3DD2f1a14E62618764",
+  "proxy": "UUPS",
+  "implementation": "0x2D2c010282744f5816e33b1d5eD97d1912B2c236",
+  "treasury": "0x7B015B27F9caC2DfE42F36950Eff7B9E772C4271",
+  "treasuryOwner": "0x1C7E5e9EA41bD25F666a0912c0A182ffB12E2013",
+  "staking": "0x4b67b739dfd832f4eac67a7aa3bc244fb74cea4f",
+  "sqk": "0x5501E1Fa81Be1c3F49225fa7668DA0245d07Db60",
+  "collections": [
+    "0xCB98349c134aB983dA5BfD80527dfe2552bDB70F"
+  ],
+  "watcher": "0x38a425429A1CD81Bb776Fe347E47865BC9243687",
+  "roundCheckCore": "0x980b4424c007caf7a1f3670b48c8eaef7ebc3d44",
+  "owner": "0x38D086Ed1F9Aa84F2278Ee36F12eE4Ee829ecE1E",
+  "deployTx": "0x9047e1b03ef85ac771796fc8b8f06bc086ec274a6ea970bf9f8d2318775a8871",
+  "block": 12055120,
+  "deployedAt": "2026-11-03T11:55:49.199Z",
+  "upgrades": [],
+  "previous": [
+    {
+      "address": "0x6694d0F614D28d28b0718B7ac10FAa9650cb304E",
+      "retired": "2026-11-03",
+      "why": "the site moved to the free holders game"
+    }
+  ]
+}
