@@ -138,13 +138,13 @@
       <li class="rule"><span class="rule-head"><span class="rule-n">2</span><span class="rule-fig">Join the Lobby</span></span><p>It opens at least 5 min before he can start. Missed it? Jump on up to 2 min after he starts, until someone gets off.</p></li>
       <li class="rule"><span class="rule-head"><span class="rule-n">3</span><span class="rule-fig">Game Begins</span></span><p>The moment Squeektoshi starts running. Your share grows every second you stay on.</p></li>
       <li class="rule"><span class="rule-head"><span class="rule-n">4</span><span class="rule-fig">Decide When to Bail</span></span><p>Once the wheel has been still for 3 min, the game ends at his last move and anyone still on is caught. Off within 12 s of that move still counts.</p></li>
-      <li class="rule"><span class="rule-head"><span class="rule-n">5</span><span class="rule-fig">Win $SQK</span></span><p>Half of his run's staking rewards: 80% split by time on, 20% jackpot for the last 10% off.</p></li>
+      <li class="rule"><span class="rule-head"><span class="rule-n">5</span><span class="rule-fig">Win $SQK</span></span><p><span data-prize-share>Half</span> of his run's staking rewards: 80% split by time on, 20% jackpot for the last 10% off.</p></li>
       <li class="rule"><span class="rule-head"><span class="rule-n">6</span><span class="rule-fig">Play while AFK</span></span><p>Set an Auto-off time, or get an alert the moment he starts.</p></li>
     </ol>
     <details class="more-rules"><summary>More rules</summary>
       <ul>
         <li>The prize pays out about 40 min after he stops, once the rewards arrive; claim it on the game card.</li>
-        <li>The rest of the Squeeks' rewards (half) goes to the developer.</li>
+        <li>The rest of the Squeeks' rewards (<span data-dev-share>half</span>) goes to the developer.</li>
         <li>Each Squeek can enter only one wallet per game.</li>
         <li>Getting off during a break only counts if he runs again.</li>
         <li>Everyone caught, or the feed drops: the prize carries to the next game.</li>
@@ -176,7 +176,7 @@
   </section>
   <section class="panel treasury" id="treasuryPanel" hidden>
     <h2>Game treasury (testnet)</h2>
-    <p class="muted">Only you see this: your wallet owns the treasury. Squeeks you deposit are staked for the game; half of what they earn is the prize and half is yours. You can take them back any time.</p>
+    <p class="muted">Only you see this: your wallet owns the treasury. Squeeks you deposit are staked for the game; the prize share of what they earn goes to the prizes and the rest is yours. You can take them back any time.</p>
     <div class="treasury-grid">
       <div>
         <h3>Your Squeeks</h3>
@@ -190,9 +190,15 @@
         <button class="secondary small" id="tWithdraw" disabled>Withdraw selected to my wallet</button>
       </div>
       <div>
-        <h3>Your developer half</h3>
+        <h3>Your developer share</h3>
         <p class="treasury-amount" id="tDev">—</p>
         <button class="secondary small" id="tDevWithdraw" disabled>Withdraw to my wallet</button>
+        <div class="split-row" id="tSplitRow" hidden>
+          <label for="tSplit">Prize share</label>
+          <input id="tSplit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off"> %
+          <button class="secondary small" id="tSplitSave">Save</button>
+          <small class="muted" id="tSplitNote"></small>
+        </div>
       </div>
     </div>
   </section>

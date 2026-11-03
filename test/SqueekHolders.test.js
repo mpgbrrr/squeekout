@@ -165,6 +165,21 @@ describe("SqueekHolders", () => {
     });
   });
 
+  describe("treasury split", () => {
+    it("lets only the treasury's owner change the prize share, from the next payout", async () => {
+      const f = await loadFixture(deploy);
+      const { game, treasury, keeper, players } = f;
+      await expect(treasury.connect(players[0]).setGameShare(7000)).to.be.revertedWithCustomError(treasury, "OwnableUnauthorizedAccount");
+      await expect(treasury.setGameShare(10_001)).to.be.revertedWithCustomError(treasury, "TooMuch");
+      await treasury.setGameShare(7000); // 70% to prizes, 30% to the developer
+      const { id, lastMove } = await playedGame(f, 1000);
+      expect(await game.prizeSoFar()).to.equal(SQK(700));
+      await at(lastMove + PRIZE_DELAY, () => game.connect(keeper).finalize(id));
+      expect((await game.getGame(id)).prize).to.equal(SQK(700));
+      expect(await treasury.devBalance()).to.equal(SQK(300));
+    });
+  });
+
   describe("collections and upgrades", () => {
     it("adds only collections Squeekchain's staking recognizes, without an upgrade", async () => {
       const { game, staking, players } = await loadFixture(deploy);

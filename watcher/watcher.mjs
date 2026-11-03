@@ -96,7 +96,7 @@ async function checkScheduledExits() {
 // Holders game: an index of who holds which Squeek (in a wallet or staked), so the page can pick a player's
 // Squeek for them. The contract checks ownership itself on entry.
 const STAKING = HOLDERS ? await pub.readContract({ address: GAME, abi, functionName: "staking" }) : null;
-const TREASURY = HOLDERS ? await pub.readContract({ address: GAME, abi, functionName: "treasury" }) : null;
+let TREASURY = HOLDERS ? await pub.readContract({ address: GAME, abi, functionName: "treasury" }) : null; // re-read each round
 const squeeks = HOLDERS ? createSqueekIndex({ pub, staking: STAKING, log: (...a) => log(...a) }) : null;
 let collections = [];
 
@@ -393,6 +393,7 @@ async function chainWork() {
     await openNextIfIdle();
     await checkScheduledExits();
     if (squeeks) {
+      TREASURY = await pub.readContract({ address: GAME, abi, functionName: "treasury" }); // the owner may switch treasuries
       collections = await pub.readContract({ address: GAME, abi, functionName: "getCollections" });
       squeeks.refresh(collections).catch(() => {}); // a full scan takes a few seconds: don't hold up the round
     }

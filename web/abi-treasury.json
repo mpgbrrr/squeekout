@@ -95,6 +95,19 @@
     "inputs": [
       {
         "indexed": false,
+        "internalType": "uint16",
+        "name": "gameShareBps",
+        "type": "uint16"
+      }
+    ],
+    "name": "GameShareSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
         "internalType": "uint256",
         "name": "earned",
         "type": "uint256"
@@ -224,6 +237,19 @@
   },
   {
     "inputs": [],
+    "name": "gameShareBps",
+    "outputs": [
+      {
+        "internalType": "uint16",
+        "name": "",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "harvest",
     "outputs": [
       {
@@ -311,6 +337,19 @@
       }
     ],
     "name": "setGame",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint16",
+        "name": "gameShareBps_",
+        "type": "uint16"
+      }
+    ],
+    "name": "setGameShare",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

@@ -945,6 +945,19 @@ const stakingAbi = parseAbi(["function depositor(address,uint256) view returns (
 const recentlyDeposited = [], recentlyWithdrawn = []; // { collection, tokenId }: shown before the watcher's index catches up
 let treasuryOwner = null, treasuryCheckedAt = 0, treasuryFor = null;
 
+// The treasury's split: the share of what its Squeeks earn that goes to prizes (earlier treasuries: always 50%).
+let prizeShareBps = 5000, splitAdjustable = false;
+async function loadSplit() {
+  if (!treasuryAbi) return;
+  const bps = await pub.readContract({ address: cfg.treasury, abi: treasuryAbi, functionName: "gameShareBps" }).catch(() => null);
+  splitAdjustable = bps != null;
+  prizeShareBps = Number(bps ?? 5000);
+  const pct = (b) => `${Math.round(b / 100)}%`;
+  for (const el of document.querySelectorAll("[data-prize-share]")) el.textContent = prizeShareBps === 5000 ? "Half" : pct(prizeShareBps);
+  for (const el of document.querySelectorAll("[data-dev-share]")) el.textContent = prizeShareBps === 5000 ? "half" : pct(10_000 - prizeShareBps);
+}
+loadSplit();
+
 async function refreshTreasury(force = false) {
   const panel = $("treasuryPanel");
   if (!treasuryAbi || !me) { panel.hidden = true; return; }
@@ -991,6 +1004,9 @@ async function refreshTreasury(force = false) {
   $("tGive").disabled = true;
   list($("tStaked"), staked, $("tWithdraw"));
   $("tDev").textContent = sqk(dev);
+  $("tSplitRow").hidden = !splitAdjustable;
+  if (splitAdjustable && document.activeElement !== $("tSplit")) $("tSplit").value = String(Math.round(prizeShareBps / 100));
+  $("tSplitNote").textContent = `${Math.round(prizeShareBps / 100)}% of what the Squeeks earn goes to prizes, ${100 - Math.round(prizeShareBps / 100)}% to you. A change applies from the next payout.`;
   $("tDevWithdraw").disabled = dev === 0n;
   $("tDevWithdraw").onclick = () => tx("withdrawDev", [me, dev], cfg.treasury, treasuryAbi).finally(() => refreshTreasury(true));
 }
@@ -1033,6 +1049,16 @@ $("tGive").onclick = async () => {
       }
     }
   } finally {
+    refreshTreasury(true);
+  }
+};
+$("tSplitSave").onclick = async () => {
+  const pct = Number($("tSplit").value.trim());
+  if (!/^\d{1,3}$/.test($("tSplit").value.trim()) || pct > 100) { msg("Enter the prize share as a whole percentage from 0 to 100.", true); return; }
+  try {
+    await tx("setGameShare", [pct * 100], cfg.treasury, treasuryAbi);
+  } finally {
+    await loadSplit();
     refreshTreasury(true);
   }
 };
