@@ -1005,16 +1005,20 @@ $("tDeposit").onclick = async () => {
   }
 };
 // Testnet: hands Squeeks to the watcher's test players, one each, those without a Squeek first, so they play too.
+// The watcher's index takes a few minutes to see a gift, so Squeeks given from this page are counted here too.
+const givenTo = new Map(); // bot address -> Squeeks given from this page
 $("tGive").onclick = async () => {
   try {
     const holdings = await Promise.all(BOTS.map((b) => fetch(`/squeeks/${b.address}`, { cache: "no-store" }).then((r) => r.json()).catch(() => [])));
-    const order = BOTS.map((b, i) => ({ ...b, has: holdings[i].length })).sort((a, b) => a.has - b.has);
+    const has = (b, i) => Math.max(holdings[i].length, givenTo.get(b.address) ?? 0);
+    const order = BOTS.map((b, i) => ({ ...b, has: has(b, i) })).sort((a, b) => a.has - b.has);
     let n = 0;
     for (const [collection, ids] of selected($("tYours"))) {
       for (const id of ids) {
         const bot = order[n++ % order.length];
         msg(`Giving Squeek #${id} to ${bot.name}…`);
         await tx("transferFrom", [me, bot.address, id], collection, nftAbi);
+        givenTo.set(bot.address, (givenTo.get(bot.address) ?? 0) + 1);
       }
     }
   } finally {
