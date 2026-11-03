@@ -100,15 +100,17 @@ const TREASURY = HOLDERS ? await pub.readContract({ address: GAME, abi, function
 const squeeks = HOLDERS ? createSqueekIndex({ pub, staking: STAKING, log: (...a) => log(...a) }) : null;
 let collections = [];
 
-// Test players (BOTS, default 5; 0 turns them off). Only for games played with the free test token.
+// Test players (BOTS, default 5; 0 turns them off). In the paid game only when it's played with the free test
+// token; in the holders game always, but only the bots holding a Squeek play.
 let bots = null;
 try {
   const sqk = await pub.readContract({ address: GAME, abi, functionName: "sqk" });
   const count = Number(env.BOTS ?? 5);
-  if (count > 0 && (await isTestToken(pub, sqk))) {
+  if (count > 0 && (HOLDERS || (await isTestToken(pub, sqk)))) {
     bots = createBots({
       count, seedKey: env.WATCHER_PRIVATE_KEY, pub, chain, rpc: RPC, game: GAME, abi, sqk, log: (...a) => log(...a), previousGames: PREVIOUS_GAMES,
       fund, scheduledExits: { submit: (body) => scheduledExitsLive ? scheduledExits.submit(body, chainStatus) : { ok: false } },
+      squeekIndex: squeeks,
     });
   }
 } catch (e) {

@@ -929,7 +929,8 @@ async function scheduleAutoOff(g, cancel = false) {
 // developer's half of their rewards.
 const treasuryAbi = HOLDERS && cfg.treasury ? await (await fetch("/abi-treasury.json")).json() : null;
 const nftAbi = parseAbi(["function isApprovedForAll(address,address) view returns (bool)", "function setApprovalForAll(address,bool)",
-  "function ownerOf(uint256) view returns (address)"]);
+  "function ownerOf(uint256) view returns (address)", "function transferFrom(address,address,uint256)"]);
+const BOTS = (cfg.bots || []).filter((b) => /^0x[0-9a-fA-F]{40}$/.test(b.address));
 const stakingAbi = parseAbi(["function depositor(address,uint256) view returns (address)"]);
 const recentlyDeposited = [], recentlyWithdrawn = []; // { collection, tokenId }: shown before the watcher's index catches up
 let treasuryOwner = null, treasuryCheckedAt = 0, treasuryFor = null;
@@ -965,13 +966,18 @@ async function refreshTreasury(force = false) {
       const cb = Object.assign(document.createElement("input"), { type: "checkbox" });
       cb.dataset.collection = x.collection;
       cb.dataset.tokenId = x.tokenId;
-      cb.onchange = () => { button.disabled = !box.querySelector("input:checked"); };
+      cb.onchange = () => {
+        button.disabled = !box.querySelector("input:checked");
+        if (box === $("tYours")) $("tGive").disabled = button.disabled;
+      };
       label.append(cb, ` #${x.tokenId}`);
       return label;
     }) : [Object.assign(document.createElement("span"), { className: "muted", textContent: "None" })]));
     button.disabled = true;
   };
   list($("tYours"), mine.filter((x) => !x.staked), $("tDeposit")); // a Squeek you staked yourself must be unstaked first
+  $("tGive").hidden = !BOTS.length;
+  $("tGive").disabled = true;
   list($("tStaked"), staked, $("tWithdraw"));
   $("tDev").textContent = sqk(dev);
   $("tDevWithdraw").disabled = dev === 0n;
@@ -993,6 +999,23 @@ $("tDeposit").onclick = async () => {
       }
       await tx("depositNfts", [collection, ids], cfg.treasury, treasuryAbi);
       recentlyDeposited.push(...ids.map((id) => ({ collection, tokenId: id.toString() })));
+    }
+  } finally {
+    refreshTreasury(true);
+  }
+};
+// Testnet: hands Squeeks to the watcher's test players, one each, those without a Squeek first, so they play too.
+$("tGive").onclick = async () => {
+  try {
+    const holdings = await Promise.all(BOTS.map((b) => fetch(`/squeeks/${b.address}`, { cache: "no-store" }).then((r) => r.json()).catch(() => [])));
+    const order = BOTS.map((b, i) => ({ ...b, has: holdings[i].length })).sort((a, b) => a.has - b.has);
+    let n = 0;
+    for (const [collection, ids] of selected($("tYours"))) {
+      for (const id of ids) {
+        const bot = order[n++ % order.length];
+        msg(`Giving Squeek #${id} to ${bot.name}…`);
+        await tx("transferFrom", [me, bot.address, id], collection, nftAbi);
+      }
     }
   } finally {
     refreshTreasury(true);

@@ -1,5 +1,6 @@
-// Test players for testnet games played with the free test token (tSQK). Each has its own wallet, derived
-// from the watcher's key, mints itself tSQK, joins every game at a random moment in the lobby (or now and then
+// Test players for testnet games: the paid game played with the free test token (tSQK), and the free holders
+// game, where a bot plays only if it holds a Squeek (given to it by a holder). Each has its own wallet, derived
+// from the watcher's key, mints itself tSQK (paid game), joins every game at a random moment in the lobby (or now and then
 // late, after he starts running), and gets off the wheel at a random moment in the style of the demo game's
 // bots, or now and then schedules its exit for a set time into the run instead. The watcher tops up their gas.
 // Only used when the game's token is TestSQK, never with real SQK.
@@ -29,7 +30,10 @@ export async function isTestToken(pub, sqk) {
  * @param seedKey the watcher's private key; each bot's key is derived from it
  * @param fund(address, wei) sends gas money from the watcher (called from the watcher's chain work)
  */
-export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fund, log, previousGames = [], scheduledExits = null }) {
+/**
+ * @param squeekIndex the holders game's Squeek index (null for the paid game): bots enter with their Squeek
+ */
+export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fund, log, previousGames = [], scheduledExits = null, squeekIndex = null }) {
   let previousCheckedAt = 0;
   const bots = Array.from({ length: count }, (_, i) => {
     const account = privateKeyToAccount(keccak256(stringToHex(`${seedKey}:squeek-chicken-bot:${i}`)));
@@ -78,6 +82,20 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
     return bot.plans.get(id);
   }
 
+  // Holders game: enters with one of the bot's Squeeks that hasn't entered this game from another wallet.
+  async function enterWithSqueek(bot, id, g) {
+    for (const s of bot.squeeks) {
+      const used = await pub.readContract({ address: game, abi, functionName: "squeekUsed", args: [BigInt(id), s.collection, BigInt(s.tokenId)] });
+      if (used) continue;
+      const hash = await send(bot, game, abi, "enter", [BigInt(id), s.collection, BigInt(s.tokenId)]);
+      const plan = planFor(bot, id, 0);
+      plan.joinedAt = Date.now() / 1000;
+      if (plan.scheduleAt != null) await schedule(bot, id, plan);
+      return hash;
+    }
+    return null; // its Squeeks are all in use this game
+  }
+
   // Signs "get me off at plan.scheduleAt into the run" and hands it to the watcher, like a player on the page.
   async function schedule(bot, id, plan) {
     const issuedAt = Math.floor(Date.now() / 1000);
@@ -109,6 +127,9 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
       }
       const now = Date.now() / 1000;
       for (const bot of bots) {
+        // Holders game: only bots holding a Squeek play (and get gas).
+        if (squeekIndex) bot.squeeks = await squeekIndex.squeeksOf(bot.account.address, { rescan: false }).catch(() => bot.squeeks ?? []);
+        if (squeekIndex && !bot.squeeks.length) continue;
         if ((await pub.getBalance({ address: bot.account.address })) < GAS_LOW) {
           const hash = await fund(bot.account.address, GAS_TOP_UP);
           log("bot", { bot: bot.name, what: "gas top-up", tx: hash });
@@ -119,10 +140,11 @@ export function createBots({ count, seedKey, pub, chain, rpc, game, abi, sqk, fu
         const g = games.get(id);
         if (!g) continue;
         for (const bot of bots) {
-          if (bot.busy) continue;
+          if (bot.busy || (squeekIndex && !bot.squeeks?.length)) continue;
           const e = await pub.readContract({ address: game, abi, functionName: "entries", args: [BigInt(id), bot.account.address] });
           const [entered, left, claimed] = [e[0], e[1], e[2]];
           const join = (what) => run(bot, what, async () => {
+            if (squeekIndex) return enterWithSqueek(bot, id, g);
             const bal = await pub.readContract({ address: sqk, abi: token, functionName: "balanceOf", args: [bot.account.address] });
             if (bal < g.p.buyIn) await send(bot, sqk, token, "mint", [bot.account.address, MINT]);
             const allowed = await pub.readContract({ address: sqk, abi: token, functionName: "allowance", args: [bot.account.address, game] });

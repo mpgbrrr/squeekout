@@ -224,4 +224,5 @@ table.results .tag { display: block; width: max-content; margin: 4px 0 0 auto; }
 .squeek-list label { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
   font-family: var(--mono); font-size: 0.85rem; cursor: pointer; }
 .squeek-list label small { color: var(--ink-3); font-family: var(--body); }
+.treasury .squeek-list + button + button { margin-top: 8px; }
 .treasury-amount { font-family: var(--mono); font-size: 1.1rem; margin: 0 0 10px; }

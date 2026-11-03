@@ -41,7 +41,7 @@ A second version of the game, `contracts/SqueekHolders.sol`, is free to play for
 | Prize | The game's own Squeeks, staked through `ChickenTreasury`, earn SQK while he runs. Each game's prize is half of what they earned since the previous game paid out; the other half goes to the developer. It's paid out `prizeDelay` (40 min) after he stops, once the run's rewards have streamed in, and games pay out in order |
 | Everything else | As the paid game: late entries, time-on-the-wheel payouts and the 20% jackpot, Auto-off, claim all, start alerts. Everyone caught or a voided game: the prize carries over. Minimum players: 1 while testing (`MIN_PLAYERS` on deploy) |
 
-The watcher and the page detect which game `GAME_ADDRESS` is (`kind()`) and adapt. For the holders game the watcher also keeps an index of who holds and who has staked which Squeek (`watcher/squeek-index.mjs`: it reads the owner of every token, about 3 seconds for 10,000), so the page can pick a player's Squeek for them; the contract checks ownership itself. Test players don't play it (they hold no Squeeks).
+The watcher and the page detect which game `GAME_ADDRESS` is (`kind()`) and adapt. For the holders game the watcher also keeps an index of who holds and who has staked which Squeek (`watcher/squeek-index.mjs`: it reads the owner of every token, about 3 seconds for 10,000), so the page can pick a player's Squeek for them; the contract checks ownership itself. Test players play it once they hold a Squeek: the treasury owner's panel has a **Give selected to test players** button that sends Squeeks to bots without one. Bots without a Squeek sit out and get no gas.
 
 To deploy it:
 

@@ -74,10 +74,10 @@ export function createSqueekIndex({ pub, staking, log }) {
     },
 
     /** A wallet's Squeeks, checked against the chain right now. Looks again if none are known and the index
-     * is more than 30 s old (a Squeek bought or staked a moment ago). */
-    async squeeksOf(address) {
+     * is more than 30 s old (a Squeek bought or staked a moment ago), unless `rescan` is false. */
+    async squeeksOf(address, { rescan: canRescan = true } = {}) {
       const key = address.toLowerCase();
-      if (!byHolder.has(key) && Date.now() - scannedAt > MIN_RESCAN_MS) await rescan();
+      if (canRescan && !byHolder.has(key) && Date.now() - scannedAt > MIN_RESCAN_MS) await rescan();
       const known = byHolder.get(key) ?? [];
       if (!known.length) return [];
       const checks = await many(known.map((s) => (s.staked
