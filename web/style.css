@@ -248,3 +248,8 @@ table.results .tag { display: block; width: max-content; margin: 4px 0 0 auto; }
   border-radius: 999px; font-family: var(--mono); font-size: 0.78rem; color: var(--ink-2); white-space: nowrap; vertical-align: middle; }
 .squeek-tag img, .squeek-list label img { width: 20px; height: 20px; border-radius: 4px; image-rendering: pixelated; background: var(--bg); }
 .squeek-list label img { width: 28px; height: 28px; }
+
+.split-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 14px; font-size: 0.9rem; }
+.split-row input { width: 3.4em; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  font-family: var(--mono); text-align: center; }
+.split-row small { flex-basis: 100%; }
