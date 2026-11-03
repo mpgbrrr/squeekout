@@ -49,7 +49,7 @@ function previousGames() {
 }
 const PREVIOUS_GAMES = previousGames();
 // Squeektoshi's X livestream; change it when the stream restarts with a new broadcast.
-const STREAM_BROADCAST_ID = env.STREAM_BROADCAST_ID || "1aJbdEWnWPkKX";
+const STREAM_BROADCAST_ID = env.STREAM_BROADCAST_ID || "1AxRnZDwQoZxl";
 const chain = env.CHAIN === "hardhat" ? hardhat : sepolia;
 if (!GAME || !env.WATCHER_PRIVATE_KEY) {
   console.error("Set GAME_ADDRESS and WATCHER_PRIVATE_KEY");
