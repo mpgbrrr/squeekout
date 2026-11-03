@@ -48,8 +48,8 @@ async function load(fromId, toId) {
   let k = 0;
   for (const game of loaded) {
     for (const p of game.players) {
-      const [entered, left, claimed, enteredAt, exitTime] = entries[k++];
-      Object.assign(p, { entered, left, claimed, enteredAt: Number(enteredAt), exitTime: Number(exitTime) });
+      const [entered, left, claimed, enteredAt, exitTime, collection, tokenId] = entries[k++];
+      Object.assign(p, { entered, left, claimed, enteredAt: Number(enteredAt), exitTime: Number(exitTime), collection, tokenId });
     }
   }
   // Winners' payouts, the same way the contract's claimable() works them out.
@@ -81,7 +81,10 @@ function card({ id, g, players }) {
   const status = Status[g.status], start = Number(g.startTime), lastMove = Number(g.lastMove);
   const [label, cls] = LABEL[status] || [status, ""];
   const pot = HOLDERS ? g.prize : g.p.buyIn * BigInt(players.filter((p) => inPot({ g }, p)).length) + g.rolloverIn;
-  const name = (p) => escapeHtml(names.playerName(p.addr)) + (me && p.addr.toLowerCase() === me ? " (you)" : "");
+  // The holders game: the Squeek each player entered with.
+  const squeek = (p) => (HOLDERS && p.collection && BigInt(p.collection) !== 0n
+    ? ` <span class="squeek-tag" title="Entered with Squeek #${p.tokenId}"><img src="/squeek-image/${p.collection}/${p.tokenId}" alt="" loading="lazy">#${p.tokenId}</span>` : "");
+  const name = (p) => escapeHtml(names.playerName(p.addr)) + (me && p.addr.toLowerCase() === me ? " (you)" : "") + squeek(p);
   const youCls = (p) => (me && p.addr.toLowerCase() === me ? ' class="mine"' : "");
   const facts = [
     start ? `Started <b>${when(start)}</b>` : "",

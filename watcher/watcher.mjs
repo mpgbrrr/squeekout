@@ -20,7 +20,7 @@ import { createServer } from "node:http";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join, extname, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPublicClient, createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { hardhat, sepolia } from "viem/chains";
 import { DEFAULTS, newGameState, readingFromStatus, step, trackRun } from "../shared/rules.js";
@@ -185,6 +185,7 @@ function persist() {
 
 let latest = null;
 let failingSince = null, lastFailureLog = 0;
+const FEED_BLIP_MS = 15_000;
 async function pollFeed() {
   try {
     const res = await fetch(`${API}/v1/status`, { signal: AbortSignal.timeout(5000) });
@@ -198,16 +199,18 @@ async function pollFeed() {
     }
     latest = readingFromStatus(await res.json(), Math.floor(Date.now() / 1000));
   } catch (e) {
-    // Keep the last reading; it ages out and the rules then treat the feed as down.
+    // Keep the last reading; it ages out and the rules then treat the feed as down. A request that fails now
+    // and then (a second or two, between the wheel's 10-second readings) changes nothing, so only a failure
+    // lasting 15 s or more is logged, then every 5 minutes while it lasts.
     const now = Date.now();
     if (failingSince == null) failingSince = now;
-    if (now - lastFailureLog >= 5 * 60_000) {
+    if (now - failingSince >= FEED_BLIP_MS && now - lastFailureLog >= 5 * 60_000) {
       log("feed_error", { error: String(e), ...e.detail, failingForSec: Math.round((now - failingSince) / 1000) });
       lastFailureLog = now;
     }
     return;
   }
-  if (failingSince != null) log("feed_recovered", { downForSec: Math.round((Date.now() - failingSince) / 1000) });
+  if (failingSince != null && lastFailureLog) log("feed_recovered", { downForSec: Math.round((Date.now() - failingSince) / 1000) });
   failingSince = null;
   lastFailureLog = 0;
 }
@@ -410,6 +413,23 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/ja
   ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json" };
 
 // Reads a small JSON request body (start alert subscriptions).
+// Squeek pictures: the SVG inside each token's on-chain metadata, kept for the most recently shown 300.
+const imageCache = new Map();
+async function squeekImage(collection, tokenId) {
+  const key = `${collection.toLowerCase()}:${tokenId}`;
+  if (imageCache.has(key)) return imageCache.get(key);
+  const uri = await pub.readContract({ address: collection, abi: parseAbi(["function tokenURI(uint256) view returns (string)"]), functionName: "tokenURI", args: [tokenId] });
+  const json = uri.startsWith("data:application/json;base64,") ? Buffer.from(uri.slice(29), "base64").toString("utf8")
+    : uri.startsWith("data:application/json,") ? decodeURIComponent(uri.slice(22)) : null;
+  const image = json ? JSON.parse(json).image : null;
+  const svg = typeof image === "string" && image.startsWith("data:image/svg+xml;base64,") ? Buffer.from(image.slice(26), "base64")
+    : typeof image === "string" && image.startsWith("data:image/svg+xml,") ? Buffer.from(decodeURIComponent(image.slice(19))) : null;
+  if (!svg) return null;
+  imageCache.set(key, svg);
+  if (imageCache.size > 300) imageCache.delete(imageCache.keys().next().value);
+  return svg;
+}
+
 function readJson(req, limit = 8192) {
   return new Promise((resolve) => {
     let body = "";
@@ -433,6 +453,16 @@ createServer(async (req, res) => {
       : { ok: false, error: "Scheduled exits aren't available on this game yet." };
     res.writeHead(result.ok ? 200 : 400, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify(result));
+  }
+  // A Squeek's picture, from its on-chain metadata, cached. Served locked down (no scripts, nothing loaded from
+  // elsewhere), so an SVG can't run code on this site even when opened directly.
+  const imagePath = /^\/squeek-image\/(0x[0-9a-fA-F]{40})\/(\d{1,7})$/.exec(url.pathname);
+  if (imagePath && HOLDERS && collections.some((c) => c.toLowerCase() === imagePath[1].toLowerCase())) {
+    const svg = await squeekImage(imagePath[1], BigInt(imagePath[2])).catch(() => null);
+    if (!svg) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:", "x-content-type-options": "nosniff" });
+    return res.end(svg);
   }
   const squeekPath = /^\/squeeks\/(0x[0-9a-fA-F]{40})$/.exec(url.pathname);
   if (squeekPath) {

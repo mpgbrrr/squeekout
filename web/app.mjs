@@ -299,7 +299,8 @@ async function loadGame() {
     results = await Promise.all(calls.map((c) => pub.readContract(c))); // chains without Multicall3
   }
   // The entries getter returns a plain list; name its fields.
-  const entry = ([entered, left, claimed, enteredAt, exitTime]) => ({ entered, left, claimed, enteredAt, exitTime });
+  // (the holders game adds the Squeek each player entered with)
+  const entry = ([entered, left, claimed, enteredAt, exitTime, collection, tokenId]) => ({ entered, left, claimed, enteredAt, exitTime, collection, tokenId });
   game = { id, ...g, players: players.map((p, i) => ({ addr: p, entry: entry(results[2 * i]), claimable: results[2 * i + 1] })) };
   // Holders game: the prize builds up from the game's staked Squeeks until it's paid out.
   if (HOLDERS) game.prizeSoFar = await pub.readContract({ address: GAME, abi, functionName: "prizeSoFar" }).catch(() => 0n);
@@ -313,6 +314,14 @@ async function loadGame() {
   refreshTreasury().catch(() => {});
   if (rules.earliestStart !== Number(g.p.earliestStart)) rules = { ...rules, earliestStart: Number(g.p.earliestStart) };
   render();
+}
+
+// Holders game: the Squeek a player entered with, as a small picture and its number.
+const squeekImageUrl = (collection, tokenId) => `/squeek-image/${collection}/${tokenId}`;
+function squeekTag(e) {
+  if (!HOLDERS || e.collection == null || BigInt(e.collection) === 0n) return "";
+  const id = String(e.tokenId);
+  return ` <span class="squeek-tag" title="Entered with Squeek #${id}"><img src="${squeekImageUrl(e.collection, id)}" alt="" loading="lazy">#${id}</span>`;
 }
 
 // The contract's in-pot rule for a game read from chain (entries are refunded if they don't count).
@@ -375,7 +384,7 @@ function render() {
         + (over && Number(e.exitTime) > Number(g.lastMove) + Number(g.p.grace) ? " · too late" : "")
       : over ? "never got off" : "still on") + joinedLate;
     const pay = e.claimed ? "claimed" : p.claimable > 0n ? sqk(p.claimable) : settled || status === "RolledOver" ? "Caught" : "—";
-    return `<tr><td>${escapeHtml(playerName(p.addr))}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}</td><td>${off}</td><td>${pay}</td></tr>`;
+    return `<tr><td>${escapeHtml(playerName(p.addr))}${me && p.addr.toLowerCase() === me.toLowerCase() ? " (you)" : ""}${squeekTag(e)}</td><td>${off}</td><td>${pay}</td></tr>`;
   }).join("") : `<tr><td colspan="3" class="muted">No players yet.</td></tr>`;
 
   // On-cam overlay: players still on, and the latest events.
@@ -388,7 +397,7 @@ function render() {
   const hudLabel = lobby ? "in the lobby" : status === "Live" ? "still on" : status === "Voided" ? (HOLDERS ? "voided" : "refunded") : "caught";
   const events = [...liveMoments.list];
   for (const p of g.players) {
-    if (Number(p.entry.enteredAt)) events.push({ t: Number(p.entry.enteredAt), text: `${who(p)} joined` });
+    if (Number(p.entry.enteredAt)) events.push({ t: Number(p.entry.enteredAt), text: `${who(p)} joined${HOLDERS && p.entry.tokenId != null ? ` with Squeek #${p.entry.tokenId}` : ""}` });
     const x = Number(p.entry.exitTime);
     const tooLate = lastMove && x > lastMove + Number(g.p.grace);
     if (x && start && x >= start) events.push({ t: x, text: `${who(p)} got off${tooLate ? " too late" : ""}`, kind: tooLate ? "bad" : "off" });
@@ -427,9 +436,10 @@ function render() {
     $("youStatus").textContent = `He's running! Late entries are open for ${mmss(lateLeft)} more, or until someone gets off. Your time on the wheel counts from when you get on.`;
   } else if (inLobby) {
     btn.textContent = "You're in"; btn.disabled = true;
+    const withSqueek = HOLDERS && mine.entry.tokenId != null ? ` with Squeek #${mine.entry.tokenId}` : "";
     $("youStatus").textContent = now < earliest
-      ? `You're in. The game starts at his first run after ${clock(earliest)}.`
-      : "You're in. The game starts the moment Squeektoshi runs.";
+      ? `You're in${withSqueek}. The game starts at his first run after ${clock(earliest)}.`
+      : `You're in${withSqueek}. The game starts the moment Squeektoshi runs.`;
   } else if (mine && status === "Live" && !Number(mine.entry.exitTime) && !late(mine.entry)) {
     btn.textContent = "Get off the wheel"; btn.onclick = () => tx("exit", [g.id]);
     $("youStatus").textContent = "You're on the wheel. Get off while he's still running.";
@@ -970,7 +980,8 @@ async function refreshTreasury(force = false) {
         button.disabled = !box.querySelector("input:checked");
         if (box === $("tYours")) $("tGive").disabled = button.disabled;
       };
-      label.append(cb, ` #${x.tokenId}`);
+      const img = Object.assign(document.createElement("img"), { src: squeekImageUrl(x.collection, x.tokenId), alt: "", loading: "lazy" });
+      label.append(cb, img, ` #${x.tokenId}`);
       return label;
     }) : [Object.assign(document.createElement("span"), { className: "muted", textContent: "None" })]));
     button.disabled = true;
