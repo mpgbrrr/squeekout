@@ -111,7 +111,7 @@ GAME=<game> npx hardhat run scripts/e2e/second-game.js --network localhost    # 
    - Start alerts by push need `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (generate with `npx web-push generate-vapid-keys`; the private key is a secret). Without them, only the page's own alarm works. Subscriptions are kept on the volume, next to the game state.
    - Variables: `GAME_ADDRESS`, `WATCHER_PRIVATE_KEY`, and optionally `RPC_URL` (a dedicated Sepolia RPC is more reliable than the public default) and `STREAM_BROADCAST_ID` (the X broadcast the cam's "Live stream" view shows, from `x.com/i/broadcasts/<id>`; change it when the stream restarts).
    - Add a **volume** mounted at `/data`, so the watcher's game state survives restarts. Without it, a restart during a live game voids that game.
-   - Generate a public domain: that URL is the web app. The live game also has a custom domain, `squeekout.fun` (Settings → Networking → Custom Domain in Railway, with an ALIAS record at the registrar, Name.com). Link previews use whichever address the visitor came in on.
+   - Generate a public domain: that URL is the web app. The live game also has a custom domain, `squeekout.fun` (bought through Railway, so its DNS records are managed in Railway's workspace Domains page; Settings → Networking → Custom Domain on the service). Link previews use whichever address the visitor came in on.
 4. **Games open themselves.** Deploying saves the default rules (buy-in, bounty, minimum players, 5-minute minimum lobby), and the watcher opens the first game as soon as it starts, then a new one whenever a game finishes. To open an extra game by hand: `DEPLOYER_PRIVATE_KEY=<deployer key> EARLIEST_START=5 npm run game:sepolia`. Squeektoshi usually runs between about 21:00 and 06:00 UTC.
 
 ### Playing with a free test token
@@ -157,3 +157,9 @@ On testnet the watcher's key is stored as a hosting environment variable. That i
 ## Testnet admin powers
 
 The deployer (owner) can create games, change the watcher address, configure the settled-round check and **upgrade the contract** (between games only). The watcher can post starts and ends, and void games; it can't take players' SQK. The owner can't either under the current code, but an upgrade replaces the code, so on testnet players trust the owner not to upgrade to something that does. Before mainnet, the upgrade right should sit with a multisig behind a timelock (so any upgrade is public days before it takes effect), or be renounced.
+
+## Squeekchain project listing
+
+Squeekchain's community page checks this line (keep it, it's rechecked daily), the `squeekchain-project` tag on the site's page and a `_squeekchain` TXT record on squeekout.fun.
+
+squeekchain-project: 5708b48e-c059-4c99-84cb-fd24bfcd3fa5
