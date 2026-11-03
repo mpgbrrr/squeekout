@@ -1,6 +1,7 @@
 // Local end-to-end setup for the holders game: stand-ins for SQK, the Squeek collection and Squeekchain's
 // staking; the game behind its proxy with account #1 as watcher and a 60 s prize delay; a treasury staking
-// Squeeks #100 and #101. Accounts #2-#4 hold Squeeks #1-#3, #5 has staked #4, #6 holds none. #2 and #3 join.
+// Squeeks #100 and #101, owned (for the page's treasury panel) by account #7, which holds Squeeks #7 and #8.
+// Accounts #2-#4 hold Squeeks #1-#3, #5 has staked #4, #6 holds none. #2 and #3 join.
 const { ethers, upgrades } = require("hardhat");
 async function main() {
   const [owner, watcher, a, b, c, staker] = await ethers.getSigners();
@@ -15,6 +16,9 @@ async function main() {
   await (await nft.setApprovalForAll(treasury.target, true)).wait();
   await (await treasury.depositNfts(nft.target, [100, 101])).wait();
   for (const [p, id] of [[a, 1], [b, 2], [c, 3], [staker, 4]]) await (await nft.mint(p.address, id)).wait();
+  const treasuryOwner = (await ethers.getSigners())[7];
+  for (const id of [7, 8]) await (await nft.mint(treasuryOwner.address, id)).wait();
+  await (await treasury.transferOwnership(treasuryOwner.address)).wait();
   await (await nft.connect(staker).setApprovalForAll(staking.target, true)).wait();
   await (await staking.connect(staker).deposit(nft.target, [4])).wait();
   const rules = { idleWindow: 180, grace: 12, jackpotBps: 2000, jackpotGroupBps: 1000, bountyFlat: ethers.parseEther("5"),

@@ -216,3 +216,12 @@ table.results .tag { display: block; width: max-content; margin: 4px 0 0 auto; }
 @media (max-width: 480px) { table.results { font-size: 0.78rem; } table.results th, table.results td { padding: 7px 4px; } table.results .medal { width: 1.3em; } }
 .result td .tag { margin-left: 8px; }
 .result tr.mine td { color: var(--good); }
+
+.treasury { margin-top: 16px; }
+.treasury-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 12px; }
+.treasury h3 { margin: 0 0 8px; font-size: 0.9rem; color: var(--ink-2); }
+.squeek-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; min-height: 1.5em; }
+.squeek-list label { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
+  font-family: var(--mono); font-size: 0.85rem; cursor: pointer; }
+.squeek-list label small { color: var(--ink-3); font-family: var(--body); }
+.treasury-amount { font-family: var(--mono); font-size: 1.1rem; margin: 0 0 10px; }

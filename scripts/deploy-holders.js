@@ -8,6 +8,10 @@
 //   SQUEEK_CORE           the SqueekCore that the settled-round check reads (default: Sepolia's; "off" to skip)
 //   MIN_PLAYERS (1 while testing: a game with a single player still runs), MIN_LOBBY seconds (300), BOUNTY SQK (5), PRIZE_DELAY seconds after he stops before the
 //   prize is paid out (2400, so the run's rewards have streamed in)
+//   TREASURY_OWNER        optional wallet to own the treasury (deposit and withdraw its Squeeks, withdraw the
+//                         developer's half); default the deployer. The game's page shows that wallet a treasury panel.
+//   PREVIOUS              optional earlier game contracts (comma-separated) the site moves away from: the watcher
+//                         closes a lobby left open there, and players can still claim there from the page
 //   RECORD                name of the record in deployments/ (default: <network>-holders)
 // Then put the game's Squeeks in the treasury: scripts/treasury-deposit.js.
 // Usage: npx hardhat run scripts/deploy-holders.js --network sepolia
@@ -52,11 +56,18 @@ async function main() {
     lateEntryWindow: 120, // entries stay open 2 minutes after the start, until the first exit
     prizeDelay: Number(env.PRIZE_DELAY || 2400),
   }, minLobby)).wait();
+  const treasuryOwner = env.TREASURY_OWNER || deployer.address;
+  if (treasuryOwner.toLowerCase() !== deployer.address.toLowerCase()) {
+    await (await treasury.transferOwnership(treasuryOwner)).wait();
+    console.log(`Treasury now owned by ${treasuryOwner}`);
+  }
+  const previous = (env.PREVIOUS || "").split(",").map((x) => x.trim()).filter(Boolean)
+    .map((address) => ({ address, retired: new Date().toISOString().slice(0, 10), why: "the site moved to the free holders game" }));
   const record = {
     network: network.name, chainId: Number(network.config.chainId || 31337), kind: "holders", address: game.target, proxy: "UUPS",
-    implementation, treasury: treasury.target, staking, sqk, collections: await game.getCollections(), watcher,
+    implementation, treasury: treasury.target, treasuryOwner, staking, sqk, collections: await game.getCollections(), watcher,
     roundCheckCore: core === "off" ? null : core, owner: deployer.address, deployTx: receipt.hash, block: receipt.blockNumber,
-    deployedAt: new Date().toISOString(), upgrades: [],
+    deployedAt: new Date().toISOString(), upgrades: [], previous,
   };
   const out = path.join(__dirname, "..", "deployments", `${env.RECORD || `${network.name}-holders`}.json`);
   fs.mkdirSync(path.dirname(out), { recursive: true });

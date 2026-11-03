@@ -310,6 +310,7 @@ async function loadGame() {
   if (before === "Lobby" && status === "Live") alertStart(game);
   updateFinaleClaim().catch(() => {});
   updateUnclaimed(id).catch(() => {});
+  refreshTreasury().catch(() => {});
   if (rules.earliestStart !== Number(g.p.earliestStart)) rules = { ...rules, earliestStart: Number(g.p.earliestStart) };
   render();
 }
@@ -921,6 +922,92 @@ async function scheduleAutoOff(g, cancel = false) {
   }
   render();
 }
+
+// ---------------------------------------------------------------- treasury panel (holders game, testnet)
+
+// For the treasury's owner only: deposit Squeeks to be staked for the game, take them back, and withdraw the
+// developer's half of their rewards.
+const treasuryAbi = HOLDERS && cfg.treasury ? await (await fetch("/abi-treasury.json")).json() : null;
+const nftAbi = parseAbi(["function isApprovedForAll(address,address) view returns (bool)", "function setApprovalForAll(address,bool)",
+  "function ownerOf(uint256) view returns (address)"]);
+const stakingAbi = parseAbi(["function depositor(address,uint256) view returns (address)"]);
+const recentlyDeposited = [], recentlyWithdrawn = []; // { collection, tokenId }: shown before the watcher's index catches up
+let treasuryOwner = null, treasuryCheckedAt = 0, treasuryFor = null;
+
+async function refreshTreasury(force = false) {
+  const panel = $("treasuryPanel");
+  if (!treasuryAbi || !me) { panel.hidden = true; return; }
+  if (!force && me === treasuryFor && Date.now() - treasuryCheckedAt < 20_000) return; // a new wallet: look straight away
+  treasuryCheckedAt = Date.now();
+  treasuryFor = me;
+  treasuryOwner ??= await pub.readContract({ address: cfg.treasury, abi: treasuryAbi, functionName: "owner" }).catch(() => null);
+  panel.hidden = !treasuryOwner || treasuryOwner.toLowerCase() !== me.toLowerCase();
+  if (panel.hidden) return;
+  const get = (who) => fetch(`/squeeks/${who}`, { cache: "no-store" }).then((r) => r.json()).catch(() => []);
+  const [mine, staked, dev] = await Promise.all([get(me), get(cfg.treasury),
+    pub.readContract({ address: cfg.treasury, abi: treasuryAbi, functionName: "devBalance" }).catch(() => 0n)]);
+  // Squeeks just deposited, until the index lists them: only those staking confirms are the treasury's.
+  const known = new Set(staked.map((x) => `${x.collection}:${x.tokenId}`.toLowerCase()));
+  for (const d of recentlyDeposited) {
+    if (known.has(`${d.collection}:${d.tokenId}`.toLowerCase())) continue;
+    const by = await pub.readContract({ address: cfg.staking, abi: stakingAbi, functionName: "depositor", args: [d.collection, BigInt(d.tokenId)] }).catch(() => null);
+    if (by?.toLowerCase() === cfg.treasury.toLowerCase()) staked.push({ ...d, staked: true });
+  }
+  const mineKnown = new Set(mine.map((x) => `${x.collection}:${x.tokenId}`.toLowerCase()));
+  for (const d of recentlyWithdrawn) {
+    if (mineKnown.has(`${d.collection}:${d.tokenId}`.toLowerCase())) continue;
+    const owner = await pub.readContract({ address: d.collection, abi: nftAbi, functionName: "ownerOf", args: [BigInt(d.tokenId)] }).catch(() => null);
+    if (owner?.toLowerCase() === me.toLowerCase()) mine.push({ ...d, staked: false });
+  }
+  const list = (box, items, button) => {
+    box.replaceChildren(...(items.length ? items.map((x) => {
+      const label = document.createElement("label");
+      const cb = Object.assign(document.createElement("input"), { type: "checkbox" });
+      cb.dataset.collection = x.collection;
+      cb.dataset.tokenId = x.tokenId;
+      cb.onchange = () => { button.disabled = !box.querySelector("input:checked"); };
+      label.append(cb, ` #${x.tokenId}`);
+      return label;
+    }) : [Object.assign(document.createElement("span"), { className: "muted", textContent: "None" })]));
+    button.disabled = true;
+  };
+  list($("tYours"), mine.filter((x) => !x.staked), $("tDeposit")); // a Squeek you staked yourself must be unstaked first
+  list($("tStaked"), staked, $("tWithdraw"));
+  $("tDev").textContent = sqk(dev);
+  $("tDevWithdraw").disabled = dev === 0n;
+  $("tDevWithdraw").onclick = () => tx("withdrawDev", [me, dev], cfg.treasury, treasuryAbi).finally(() => refreshTreasury(true));
+}
+
+const selected = (box) => {
+  const byCollection = new Map();
+  for (const cb of box.querySelectorAll("input:checked")) {
+    byCollection.set(cb.dataset.collection, [...(byCollection.get(cb.dataset.collection) ?? []), BigInt(cb.dataset.tokenId)]);
+  }
+  return byCollection;
+};
+$("tDeposit").onclick = async () => {
+  try {
+    for (const [collection, ids] of selected($("tYours"))) {
+      if (!(await pub.readContract({ address: collection, abi: nftAbi, functionName: "isApprovedForAll", args: [me, cfg.treasury] }))) {
+        await tx("setApprovalForAll", [cfg.treasury, true], collection, nftAbi);
+      }
+      await tx("depositNfts", [collection, ids], cfg.treasury, treasuryAbi);
+      recentlyDeposited.push(...ids.map((id) => ({ collection, tokenId: id.toString() })));
+    }
+  } finally {
+    refreshTreasury(true);
+  }
+};
+$("tWithdraw").onclick = async () => {
+  try {
+    for (const [collection, ids] of selected($("tStaked"))) {
+      await tx("withdrawNfts", [collection, ids, me], cfg.treasury, treasuryAbi);
+      recentlyWithdrawn.push(...ids.map((id) => ({ collection, tokenId: id.toString() })));
+    }
+  } finally {
+    refreshTreasury(true);
+  }
+};
 
 function msg(text, error = false) {
   $("msg").textContent = text;

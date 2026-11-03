@@ -96,6 +96,7 @@ async function checkScheduledExits() {
 // Holders game: an index of who holds which Squeek (in a wallet or staked), so the page can pick a player's
 // Squeek for them. The contract checks ownership itself on entry.
 const STAKING = HOLDERS ? await pub.readContract({ address: GAME, abi, functionName: "staking" }) : null;
+const TREASURY = HOLDERS ? await pub.readContract({ address: GAME, abi, functionName: "treasury" }) : null;
 const squeeks = HOLDERS ? createSqueekIndex({ pub, staking: STAKING, log: (...a) => log(...a) }) : null;
 let collections = [];
 
@@ -452,7 +453,7 @@ createServer(async (req, res) => {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify({ gameAddress: GAME, chainId: chain.id, rpcUrl: RPC, squeekApi: API, watcher: account.address, bots: bots?.list() ?? [],
       streamBroadcastId: STREAM_BROADCAST_ID, previousGames: PREVIOUS_GAMES, vapidPublicKey: push.publicKey, scheduledExits: scheduledExitsLive,
-      kind: KIND, staking: STAKING, collections }));
+      kind: KIND, staking: STAKING, treasury: TREASURY, collections }));
   }
   const rel = url.pathname === "/" ? "/web/index.html" : url.pathname.startsWith("/shared/") ? url.pathname : `/web${url.pathname}`;
   const file = normalize(join(ROOT, rel));

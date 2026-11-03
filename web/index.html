@@ -169,6 +169,27 @@
     </ul>
     </div>
   </section>
+  <section class="panel treasury" id="treasuryPanel" hidden>
+    <h2>Game treasury (testnet)</h2>
+    <p class="muted">Only you see this: your wallet owns the treasury. Squeeks you deposit are staked for the game; half of what they earn is the prize and half is yours. You can take them back any time.</p>
+    <div class="treasury-grid">
+      <div>
+        <h3>Your Squeeks</h3>
+        <div class="squeek-list" id="tYours"></div>
+        <button class="primary small" id="tDeposit" disabled>Deposit selected to treasury</button>
+      </div>
+      <div>
+        <h3>Staked for the game</h3>
+        <div class="squeek-list" id="tStaked"></div>
+        <button class="secondary small" id="tWithdraw" disabled>Withdraw selected to my wallet</button>
+      </div>
+      <div>
+        <h3>Your developer half</h3>
+        <p class="treasury-amount" id="tDev">—</p>
+        <button class="secondary small" id="tDevWithdraw" disabled>Withdraw to my wallet</button>
+      </div>
+    </div>
+  </section>
   <section class="bottom">
     <div class="panel">
       <h2>Players</h2>

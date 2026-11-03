@@ -50,7 +50,7 @@ DEPLOYER_PRIVATE_KEY=<owner key> WATCHER_ADDRESS=<watcher address> npx hardhat r
 DEPLOYER_PRIVATE_KEY=<owner key> TOKEN_IDS=12,345 npx hardhat run scripts/treasury-deposit.js --network sepolia
 ```
 
-The first writes `deployments/sepolia-holders.json` (game, treasury, staking). The second stakes the owner's Squeeks for the game; the owner can take them back any time with the treasury's `withdrawNfts`, and withdraw the developer's half with `withdrawDev`. Then point the watcher's `GAME_ADDRESS` at the holders game.
+The first writes `deployments/sepolia-holders.json` (game, treasury, staking). Set `TREASURY_OWNER` to make another wallet own the treasury: the game page then shows that wallet a **Game treasury** panel to deposit its Squeeks, take them back and withdraw the developer's half, with no scripts. The second command stakes the owner's Squeeks for the game from the command line instead; the owner can take them back any time with the treasury's `withdrawNfts`, and withdraw the developer's half with `withdrawDev`. Then point the watcher's `GAME_ADDRESS` at the holders game.
 
 ## How it works
 
