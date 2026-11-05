@@ -1,0 +1,29 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "kind": "holders",
+  "squeekchainRelease": "core-sepolia-20261103",
+  "address": "0xbf9F6f619F5400295190fb996C431Cd4c7712D4a",
+  "proxy": "UUPS",
+  "implementation": "0x2d2c010282744f5816e33b1d5ed97d1912b2c236",
+  "treasury": "0xaa85fb592746A3129d2614D975073abE48097F0C",
+  "treasuryOwner": "0x1C7E5e9EA41bD25F666a0912c0A182ffB12E2013",
+  "staking": "0x50fd1780526c3186a0c037c7622203bc4fb611ca",
+  "sqk": "0xd78a3956cF63164d1Fa1C622ad3c66623162Fa1e",
+  "collections": [
+    "0xC4C7982657f00509548F3a3a41db7FA439a6856B"
+  ],
+  "watcher": "0x38a425429A1CD81Bb776Fe347E47865BC9243687",
+  "roundCheckCore": "0xfd6c166d4b8e2962e65746a13e5a0797cd4de0c4",
+  "owner": "0x38D086Ed1F9Aa84F2278Ee36F12eE4Ee829ecE1E",
+  "deployedAt": "2026-11-05T17:23:35.842Z",
+  "upgrades": [],
+  "note": "The new Squeekchain contracts come from its API and were checked on chain (staking links this collection, SQK and SqueekCore); they are not yet in the published Squeekchain deployment record.",
+  "previous": [
+    {
+      "address": "0xab42C0778B4756b91991Bf3DD2f1a14E62618764",
+      "retired": "2026-11-05",
+      "why": "Squeekchain moved to new contracts (core-sepolia-20261103); its record is sepolia-holders-old-system.json"
+    }
+  ]
+}
