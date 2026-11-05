@@ -13,6 +13,7 @@
 //   PREVIOUS              optional earlier game contracts (comma-separated) the site moves away from: the watcher
 //                         closes a lobby left open there, and players can still claim there from the page
 //   RECORD                name of the record in deployments/ (default: <network>-holders)
+//   GAME_ADDRESS          optional: finish setting up a game proxy an earlier run deployed (if it stopped part way)
 // Then put the game's Squeeks in the treasury: scripts/treasury-deposit.js.
 // Usage: npx hardhat run scripts/deploy-holders.js --network sepolia
 const fs = require("node:fs");
@@ -30,9 +31,17 @@ async function main() {
   const core = env.SQUEEK_CORE || SEPOLIA_CORE;
   const [deployer] = await ethers.getSigners();
   console.log(`Deploying from ${deployer.address} on ${network.name}`);
-  const game = await upgrades.deployProxy(await ethers.getContractFactory("SqueekHolders"), [staking, watcher, deployer.address], { kind: "uups" });
-  const receipt = await game.deploymentTransaction().wait();
-  const implementation = await upgrades.erc1967.getImplementationAddress(game.target);
+  const game = env.GAME_ADDRESS ? await ethers.getContractAt("SqueekHolders", env.GAME_ADDRESS)
+    : await upgrades.deployProxy(await ethers.getContractFactory("SqueekHolders"), [staking, watcher, deployer.address], { kind: "uups" });
+  const receipt = env.GAME_ADDRESS ? null : await game.deploymentTransaction().wait(2);
+  // Public nodes can lag behind a new deployment: wait until they serve the proxy's implementation.
+  let implementation = null;
+  for (let i = 0; i < 40 && !implementation; i++) {
+    implementation = await upgrades.erc1967.getImplementationAddress(game.target).catch(() => null);
+    if (!implementation) await new Promise((r) => setTimeout(r, 3000));
+  }
+  if (!implementation) throw new Error(`No implementation found behind ${game.target} yet; rerun with GAME_ADDRESS=${game.target}`);
+  if ((await game.staking()).toLowerCase() !== staking.toLowerCase()) throw new Error(`${game.target} uses another staking contract`);
   const sqk = await game.sqk();
   const treasury = await (await ethers.getContractFactory("ChickenTreasury")).deploy(sqk, staking);
   await treasury.waitForDeployment();
@@ -66,7 +75,7 @@ async function main() {
   const record = {
     network: network.name, chainId: Number(network.config.chainId || 31337), kind: "holders", address: game.target, proxy: "UUPS",
     implementation, treasury: treasury.target, treasuryOwner, staking, sqk, collections: await game.getCollections(), watcher,
-    roundCheckCore: core === "off" ? null : core, owner: deployer.address, deployTx: receipt.hash, block: receipt.blockNumber,
+    roundCheckCore: core === "off" ? null : core, owner: deployer.address, deployTx: receipt?.hash ?? null, block: receipt?.blockNumber ?? null,
     deployedAt: new Date().toISOString(), upgrades: [], previous,
   };
   const out = path.join(__dirname, "..", "deployments", `${env.RECORD || `${network.name}-holders`}.json`);
