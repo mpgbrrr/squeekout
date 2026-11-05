@@ -6,7 +6,7 @@
   "address": "0xbf9F6f619F5400295190fb996C431Cd4c7712D4a",
   "proxy": "UUPS",
   "implementation": "0x2d2c010282744f5816e33b1d5ed97d1912b2c236",
-  "treasury": "0xaa85fb592746A3129d2614D975073abE48097F0C",
+  "treasury": "0xF61F0507efe7FBaa3FB2f8a52E80c5DdA1eE22E7",
   "treasuryOwner": "0x1C7E5e9EA41bD25F666a0912c0A182ffB12E2013",
   "staking": "0x50fd1780526c3186a0c037c7622203bc4fb611ca",
   "sqk": "0xd78a3956cF63164d1Fa1C622ad3c66623162Fa1e",
@@ -24,6 +24,12 @@
       "address": "0xab42C0778B4756b91991Bf3DD2f1a14E62618764",
       "retired": "2026-11-05",
       "why": "Squeekchain moved to new contracts (core-sepolia-20261103); its record is sepolia-holders-old-system.json"
+    }
+  ],
+  "previousTreasuries": [
+    {
+      "address": "0xaa85fb592746A3129d2614D975073abE48097F0C",
+      "replaced": "2026-11-05"
     }
   ]
 }
