@@ -25,5 +25,11 @@
       "retired": "2026-11-03",
       "why": "the site moved to the free holders game"
     }
-  ]
+  ],
+  "roundCheck": {
+    "enabled": false,
+    "since": "2026-11-05",
+    "tx": "0x6a2e3270495f65becd0e42188e80cbfc5ce14b5e2c214bef2a7de4bd543019aa",
+    "why": "Squeekchain moved the wheel to a new deployment (core-sepolia-20261103); the old SqueekCore stopped settling on 4 Nov 21:00 UTC"
+  }
 }
