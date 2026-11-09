@@ -63,7 +63,22 @@ contract SqueekChickenV2Mock is SqueekChicken {
 contract MockNFT is ERC721 {
     uint256 public constant MAX_SUPPLY = 200;
 
+    mapping(uint256 => uint8) public levelOf; // 0 means level 1
+
     constructor() ERC721("Squeek", "SQUEEK") {}
+
+    function level(uint256 tokenId) external view returns (uint8) {
+        ownerOf(tokenId); // reverts for a burned or unissued Squeek, like the real one
+        return levelOf[tokenId] + 1;
+    }
+
+    /// @notice Test helper for merges: burns `donor` and raises `survivor` a level; the caller must own both.
+    function mergeBurn(uint256 survivor, uint256 donor) external {
+        require(ownerOf(survivor) == msg.sender && ownerOf(donor) == msg.sender && survivor != donor, "not owner");
+        require(levelOf[survivor] == levelOf[donor], "level mismatch");
+        _burn(donor);
+        levelOf[survivor] += 1;
+    }
 
     function mint(address to, uint256 tokenId) external {
         _mint(to, tokenId);
@@ -81,7 +96,11 @@ contract MockStaking {
     mapping(address => mapping(uint256 => address)) public depositor;
     mapping(address => uint256) public power;
 
+    mapping(address => uint256) public principal;
+    bool public paused;
+
     error Unauthorized();
+    error EmergencyPaused();
 
     constructor(IERC20 token_, address genesis_) {
         token = token_;
@@ -107,6 +126,45 @@ contract MockStaking {
             power[msg.sender] -= 1000e18;
             IERC721(collection).transferFrom(address(this), msg.sender, tokenIds[i]);
         }
+    }
+
+    function setPaused(bool p) external {
+        paused = p;
+    }
+
+    /// @dev Merges two of the caller's deposited Squeeks; power rises by 10% of the pair at level 1 to 2.
+    function mergeDeposited(address collection, uint256 survivor, uint256 donor) external {
+        if (paused) revert EmergencyPaused();
+        if (depositor[collection][survivor] != msg.sender || depositor[collection][donor] != msg.sender) revert Unauthorized();
+        MockNFT(collection).mergeBurn(survivor, donor);
+        delete depositor[collection][donor];
+        power[msg.sender] += 200e18;
+    }
+
+    function stake(uint256 amount) external {
+        if (paused) revert EmergencyPaused();
+        token.transferFrom(msg.sender, address(this), amount);
+        principal[msg.sender] += amount;
+    }
+
+    /// @dev Burns a flat 2% exit fee (sent to a dead address here).
+    function unstake(uint256 amount, uint256 maxFee, uint64 deadline) external returns (uint256 net) {
+        require(block.timestamp <= deadline, "deadline");
+        uint256 fee = amount / 50;
+        require(fee <= maxFee, "fee");
+        principal[msg.sender] -= amount;
+        net = amount - fee;
+        token.transfer(address(0xdead), fee);
+        token.transfer(msg.sender, net);
+    }
+
+    function quoteUnstake(address, uint256 amount) external pure returns (uint256 fee, uint256 net) {
+        fee = amount / 50;
+        net = amount - fee;
+    }
+
+    function stakeOf(address account) external view returns (uint256, uint256, uint64) {
+        return (principal[account], 0, 0);
     }
 
     /// @notice Test helper: credits `account` with `amount` of rewards, paid in by the caller.

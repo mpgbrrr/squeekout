@@ -13,6 +13,10 @@ import {ISqueekStaking} from "./ISqueekStaking.sol";
 /// Each harvest splits everything earned since the last one: `gameShareBps` to the game, which pays it out as a
 /// game's prize, and the rest to the developer's balance. The owner sets the split (default 50/50). Only the game can harvest; only the owner (the
 /// developer) can move the NFTs or withdraw the developer's half, both at any time.
+/// To keep its share of the rewards as other holders merge, the owner can merge the treasury's Squeeks
+/// (`mergeNfts`: the donor is burned and the survivor's power rises 10% above the pair) and stake the developer's
+/// SQK (`stakeDev`, or automatically at each harvest with `compoundDev`), which earns more for every Squeek the
+/// treasury holds. Rewards from both are split at the next harvest like any other.
 /// @dev The treasury is the staking account, so only it can claim its rewards: nobody else can trigger or
 /// redirect them. Its token must be the game's token.
 contract ChickenTreasury is Ownable, IERC721Receiver {
@@ -23,6 +27,8 @@ contract ChickenTreasury is Ownable, IERC721Receiver {
     address public game;
     uint256 public devBalance; // the developer's share, waiting to be withdrawn
     uint16 public gameShareBps = 5000; // share of each harvest that goes to the game's prizes (5000 = 50%)
+    uint256 public devStaked; // the developer's SQK staked in Squeekchain (principal; unstaking pays an exit fee)
+    bool public compoundDev; // stake the developer's share of each harvest instead of holding it
 
     event GameSet(address game);
     event GameShareSet(uint16 gameShareBps);
@@ -30,6 +36,10 @@ contract ChickenTreasury is Ownable, IERC721Receiver {
     event DevWithdrawn(address to, uint256 amount);
     event NftsDeposited(address collection, uint256[] tokenIds);
     event NftsWithdrawn(address collection, uint256[] tokenIds, address to);
+    event NftsMerged(address collection, uint256 survivor, uint256 donor);
+    event DevStaked(uint256 amount);
+    event DevUnstaked(uint256 amount, uint256 net);
+    event CompoundDevSet(bool on);
 
     error NotGame();
     error TooMuch();
@@ -69,6 +79,50 @@ contract ChickenTreasury is Ownable, IERC721Receiver {
         emit NftsWithdrawn(collection, tokenIds, to);
     }
 
+    /// @notice Merges two of the treasury's staked Squeeks of the same level: `donor` is burned and `survivor`
+    /// rises one level, staying staked. Squeekchain enforces the rules (merges open, same level, cooldown).
+    function mergeNfts(address collection, uint256 survivor, uint256 donor) external onlyOwner {
+        staking.mergeDeposited(collection, survivor, donor);
+        emit NftsMerged(collection, survivor, donor);
+    }
+
+    /// @notice Stakes `amount` of the developer's balance in Squeekchain. It earns from the next harvest on;
+    /// taking it back (`unstakeDev`) costs Squeekchain's exit fee, which is burned.
+    function stakeDev(uint256 amount) external onlyOwner {
+        if (amount > devBalance) revert TooMuch();
+        devBalance -= amount;
+        _stake(amount);
+    }
+
+    /// @notice Unstakes `amount` of the developer's staked SQK (mature principal only) into the developer's
+    /// balance, minus the exit fee. Quote the fee with the staking contract's `quoteUnstake(treasury, amount)`.
+    function unstakeDev(uint256 amount, uint256 maxFee, uint64 deadline) external onlyOwner {
+        if (amount > devStaked) revert TooMuch();
+        devStaked -= amount;
+        uint256 net = staking.unstake(amount, maxFee, deadline);
+        devBalance += net;
+        emit DevUnstaked(amount, net);
+    }
+
+    /// @notice When on, the developer's share of each harvest is staked instead of held.
+    function setCompoundDev(bool on) external onlyOwner {
+        compoundDev = on;
+        emit CompoundDevSet(on);
+    }
+
+    function _stake(uint256 amount) private {
+        sqk.forceApprove(address(staking), amount);
+        staking.stake(amount);
+        devStaked += amount;
+        emit DevStaked(amount);
+    }
+
+    /// @dev Used by harvest, which must never fail because staking does.
+    function stakeFromHarvest(uint256 amount) external {
+        if (msg.sender != address(this)) revert NotGame();
+        _stake(amount);
+    }
+
     function withdrawDev(address to, uint256 amount) external onlyOwner {
         if (amount > devBalance) revert TooMuch();
         devBalance -= amount;
@@ -86,7 +140,10 @@ contract ChickenTreasury is Ownable, IERC721Receiver {
         } catch {}
         uint256 earned = sqk.balanceOf(address(this)) - devBalance;
         toGame = (earned * gameShareBps) / 10_000;
-        devBalance += earned - toGame;
+        uint256 toDev = earned - toGame;
+        // Staking may be paused or refuse; then the developer's share is simply held as usual.
+        if (compoundDev && toDev > 0) try this.stakeFromHarvest(toDev) {} catch { devBalance += toDev; }
+        else devBalance += toDev;
         if (toGame > 0) sqk.safeTransfer(game, toGame);
         emit Harvested(earned, toGame, earned - toGame);
     }

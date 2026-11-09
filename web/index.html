@@ -188,11 +188,20 @@
         <h3>Staked for the game</h3>
         <div class="squeek-list" id="tStaked"></div>
         <button class="secondary small" id="tWithdraw" disabled>Withdraw selected to my wallet</button>
+        <button class="secondary small" id="tMerge" disabled hidden title="Tick two Squeeks of the same level: the first one you tick keeps its number and rises a level, the second is burned">Merge two selected</button>
+        <small class="muted" id="tMergeNote" hidden>Merging burns one Squeek and makes the other a level higher, worth 10% more than the pair. It can't be undone.</small>
       </div>
       <div>
         <h3>Your developer share</h3>
         <p class="treasury-amount" id="tDev">—</p>
         <button class="secondary small" id="tDevWithdraw" disabled>Withdraw to my wallet</button>
+        <div class="stake-row" id="tStakeRow" hidden>
+          <p class="muted">Staked to earn more: <strong id="tDevStaked">—</strong></p>
+          <button class="primary small" id="tStake" disabled>Stake it to earn more</button>
+          <button class="secondary small" id="tUnstake" disabled>Unstake</button>
+          <label class="check"><input type="checkbox" id="tCompound"> Stake my share automatically at each payout</label>
+          <small class="muted" id="tStakeNote">Staked SQK earns more for every Squeek in the treasury. Taking it back costs Squeekchain's exit fee, which is burned.</small>
+        </div>
         <div class="split-row" id="tSplitRow" hidden>
           <label for="tSplit">Prize share</label>
           <input id="tSplit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off"> %

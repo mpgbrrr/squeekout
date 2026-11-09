@@ -180,6 +180,65 @@ describe("SqueekHolders", () => {
     });
   });
 
+  describe("treasury yield", () => {
+    it("merges the treasury's staked Squeeks: the donor is burned and the survivor stays staked, more powerful", async () => {
+      const { treasury, staking, nft, players } = await loadFixture(deploy);
+      await expect(treasury.connect(players[0]).mergeNfts(nft.target, 100, 101)).to.be.revertedWithCustomError(treasury, "OwnableUnauthorizedAccount");
+      const [before] = await staking.accountPower(treasury.target);
+      await expect(treasury.mergeNfts(nft.target, 100, 101)).to.emit(treasury, "NftsMerged").withArgs(nft.target, 100, 101);
+      expect((await staking.accountPower(treasury.target))[0]).to.equal(before - SQK(1000) + SQK(1200)); // the pair, plus 10%
+      await expect(nft.ownerOf(101)).to.be.revertedWithCustomError(nft, "ERC721NonexistentToken");
+      expect(await staking.depositor(nft.target, 100)).to.equal(treasury.target);
+      expect(await nft.level(100)).to.equal(2n);
+      await expect(treasury.mergeNfts(nft.target, 100, 102)).to.be.revertedWith("level mismatch"); // Squeekchain's rules apply
+    });
+
+    it("stakes and unstakes the developer's share without touching the prize money", async () => {
+      const f = await loadFixture(deploy);
+      const { game, treasury, staking, keeper, players } = f;
+      const { id, lastMove } = await playedGame(f, 1000);
+      await at(lastMove + PRIZE_DELAY, () => game.connect(keeper).finalize(id));
+      expect(await treasury.devBalance()).to.equal(SQK(500));
+      await expect(treasury.connect(players[0]).stakeDev(SQK(100))).to.be.revertedWithCustomError(treasury, "OwnableUnauthorizedAccount");
+      await expect(treasury.stakeDev(SQK(501))).to.be.revertedWithCustomError(treasury, "TooMuch");
+      await treasury.stakeDev(SQK(400));
+      expect(await treasury.devBalance()).to.equal(SQK(100));
+      expect(await treasury.devStaked()).to.equal(SQK(400));
+      expect((await staking.stakeOf(treasury.target))[0]).to.equal(SQK(400));
+      expect(await game.prizeSoFar()).to.equal(0n); // the staked SQK isn't mistaken for new earnings
+      // the next harvest still splits only what was earned
+      const g2 = await playedGame(f, 200);
+      await at(g2.lastMove + PRIZE_DELAY, () => game.connect(keeper).finalize(g2.id));
+      expect((await game.getGame(g2.id)).prize).to.equal(SQK(100));
+      expect(await treasury.devBalance()).to.equal(SQK(200));
+      // unstaking pays the exit fee (2% in the stand-in) and returns the rest to the developer's balance
+      const deadline = (await time.latest()) + 600;
+      await expect(treasury.unstakeDev(SQK(401), SQK(100), deadline)).to.be.revertedWithCustomError(treasury, "TooMuch");
+      await treasury.unstakeDev(SQK(400), SQK(8), deadline);
+      expect(await treasury.devStaked()).to.equal(0n);
+      expect(await treasury.devBalance()).to.equal(SQK(200 + 392));
+      expect(await game.prizeSoFar()).to.equal(0n);
+    });
+
+    it("compounds the developer's share at each harvest, and falls back to holding it if staking refuses", async () => {
+      const f = await loadFixture(deploy);
+      const { game, treasury, staking, keeper } = f;
+      await treasury.setCompoundDev(true);
+      const g1 = await playedGame(f, 1000);
+      await at(g1.lastMove + PRIZE_DELAY, () => game.connect(keeper).finalize(g1.id));
+      expect((await game.getGame(g1.id)).prize).to.equal(SQK(500));
+      expect(await treasury.devStaked()).to.equal(SQK(500));
+      expect(await treasury.devBalance()).to.equal(0n);
+      await staking.setPaused(true); // Squeekchain pauses intake: the game must still pay out
+      const g2 = await playedGame(f, 1000);
+      await at(g2.lastMove + PRIZE_DELAY, () => game.connect(keeper).finalize(g2.id));
+      expect((await game.getGame(g2.id)).prize).to.equal(SQK(500));
+      expect(await treasury.devStaked()).to.equal(SQK(500));
+      expect(await treasury.devBalance()).to.equal(SQK(500));
+      await expect(treasury.stakeFromHarvest(1)).to.be.revertedWithCustomError(treasury, "NotGame"); // internal use only
+    });
+  });
+
   describe("collections and upgrades", () => {
     it("adds only collections Squeekchain's staking recognizes, without an upgrade", async () => {
       const { game, staking, players } = await loadFixture(deploy);

@@ -52,6 +52,18 @@ DEPLOYER_PRIVATE_KEY=<owner key> TOKEN_IDS=12,345 npx hardhat run scripts/treasu
 
 The first writes `deployments/sepolia-holders.json` (game, treasury, staking). Set `TREASURY_OWNER` to make another wallet own the treasury: the game page then shows that wallet a **Game treasury** panel to deposit its Squeeks, take them back and withdraw the developer's half, with no scripts. The second command stakes the owner's Squeeks for the game from the command line instead; the owner can take them back any time with the treasury's `withdrawNfts`, and withdraw the developer's half with `withdrawDev`. Then point the watcher's `GAME_ADDRESS` at the holders game. To move a live game to a new treasury (for example after the treasury contract changes), use `scripts/replace-treasury.js`, which explains the steps.
 
+#### Growing the treasury's rewards
+
+Squeekchain issues a fixed amount of SQK per Squeek block and shares it by power, so the treasury's share shrinks as other holders merge and stake. Its owner can keep up from the treasury panel:
+
+| Lever | What it does | Call |
+|---|---|---|
+| Merge | Two staked Squeeks of the same level become one a level higher; the other is burned. The survivor is worth 10% more power than the pair (level power 1,000 × 2.2^(L−1)), and stays staked. Squeekchain enforces merges being open, matching levels and the cooldown | `mergeNfts(collection, survivor, donor)` |
+| Stake SQK | Stakes the developer's share. Staked SQK earns `S/40 × (1 + Squeek power/1,000)` power, so each level-1 Squeek in the treasury adds one more times the base rate. Unstaking pays Squeekchain's exit fee (2%, up to 60% in a rush of exits), which is burned | `stakeDev(amount)`, `unstakeDev(amount, maxFee, deadline)` |
+| Compound | Stakes the developer's share at every payout instead of holding it. If staking refuses (for example while paused), the share is held as before and the game still pays out | `setCompoundDev(true)` |
+
+Prize money is never staked: the game's share of every harvest is paid out as before, and rewards earned by staked SQK are split at the next harvest like any other.
+
 ## How it works
 
 ```

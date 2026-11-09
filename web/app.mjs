@@ -939,9 +939,14 @@ async function scheduleAutoOff(g, cancel = false) {
 // developer's half of their rewards.
 const treasuryAbi = HOLDERS && cfg.treasury ? await (await fetch("/abi-treasury.json")).json() : null;
 const nftAbi = parseAbi(["function isApprovedForAll(address,address) view returns (bool)", "function setApprovalForAll(address,bool)",
-  "function ownerOf(uint256) view returns (address)", "function transferFrom(address,address,uint256)"]);
+  "function ownerOf(uint256) view returns (address)", "function transferFrom(address,address,uint256)",
+  "function level(uint256) view returns (uint8)"]);
 const BOTS = (cfg.bots || []).filter((b) => /^0x[0-9a-fA-F]{40}$/.test(b.address));
-const stakingAbi = parseAbi(["function depositor(address,uint256) view returns (address)"]);
+const stakingAbi = parseAbi(["function depositor(address,uint256) view returns (address)",
+  "function stakeOf(address) view returns (uint256 principal, uint256 freshPrincipal, uint64 freshUntilRound)",
+  "function quoteUnstake(address,uint256) view returns (uint256 fee, uint256 net)"]);
+const levels = new Map(); // "collection:id" -> level, for the treasury's Squeeks
+const mergeOrder = []; // staked Squeeks in the order they were ticked: the first survives a merge
 const recentlyDeposited = [], recentlyWithdrawn = []; // { collection, tokenId }: shown before the watcher's index catches up
 let treasuryOwner = null, treasuryCheckedAt = 0, treasuryFor = null;
 
@@ -983,6 +988,19 @@ async function refreshTreasury(force = false) {
     const owner = await pub.readContract({ address: d.collection, abi: nftAbi, functionName: "ownerOf", args: [BigInt(d.tokenId)] }).catch(() => null);
     if (owner?.toLowerCase() === me.toLowerCase()) mine.push({ ...d, staked: false });
   }
+  // Treasuries from 9 Nov 2026 on can merge Squeeks and stake the developer's SQK.
+  const [devStaked, compound] = await Promise.all([
+    pub.readContract({ address: cfg.treasury, abi: treasuryAbi, functionName: "devStaked" }).catch(() => null),
+    pub.readContract({ address: cfg.treasury, abi: treasuryAbi, functionName: "compoundDev" }).catch(() => false)]);
+  const canGrow = devStaked != null;
+  if (canGrow) await Promise.all(staked.map(async (x) => {
+    const key = `${x.collection}:${x.tokenId}`.toLowerCase();
+    if (!levels.has(key)) {
+      const l = await pub.readContract({ address: x.collection, abi: nftAbi, functionName: "level", args: [BigInt(x.tokenId)] }).catch(() => null);
+      if (l != null) levels.set(key, Number(l));
+    }
+  }));
+  mergeOrder.length = 0;
   const list = (box, items, button) => {
     box.replaceChildren(...(items.length ? items.map((x) => {
       const label = document.createElement("label");
@@ -992,9 +1010,17 @@ async function refreshTreasury(force = false) {
       cb.onchange = () => {
         button.disabled = !box.querySelector("input:checked");
         if (box === $("tYours")) $("tGive").disabled = button.disabled;
+        if (box === $("tStaked")) {
+          const i = mergeOrder.indexOf(cb);
+          if (cb.checked && i < 0) mergeOrder.push(cb); else if (!cb.checked && i >= 0) mergeOrder.splice(i, 1);
+          const [a, b] = mergeOrder;
+          $("tMerge").disabled = !(mergeOrder.length === 2 && a.dataset.collection === b.dataset.collection && a.dataset.level && a.dataset.level === b.dataset.level);
+        }
       };
+      const lvl = box === $("tStaked") ? levels.get(`${x.collection}:${x.tokenId}`.toLowerCase()) : undefined;
+      if (lvl) cb.dataset.level = String(lvl);
       const img = Object.assign(document.createElement("img"), { src: squeekImageUrl(x.collection, x.tokenId), alt: "", loading: "lazy" });
-      label.append(cb, img, ` #${x.tokenId}`);
+      label.append(cb, img, ` #${x.tokenId}${lvl ? ` · L${lvl}` : ""}`);
       return label;
     }) : [Object.assign(document.createElement("span"), { className: "muted", textContent: "None" })]));
     button.disabled = true;
@@ -1007,6 +1033,27 @@ async function refreshTreasury(force = false) {
   $("tSplitRow").hidden = !splitAdjustable;
   if (splitAdjustable && document.activeElement !== $("tSplit")) $("tSplit").value = String(Math.round(prizeShareBps / 100));
   $("tSplitNote").textContent = `${Math.round(prizeShareBps / 100)}% of what the Squeeks earn goes to prizes, ${100 - Math.round(prizeShareBps / 100)}% to you. A change applies from the next payout.`;
+  $("tMerge").hidden = $("tMergeNote").hidden = !canGrow;
+  $("tMerge").disabled = true;
+  $("tStakeRow").hidden = !canGrow;
+  if (canGrow) {
+    $("tDevStaked").textContent = sqk(devStaked);
+    $("tStake").disabled = dev === 0n;
+    $("tStake").onclick = () => tx("stakeDev", [dev], cfg.treasury, treasuryAbi).finally(() => refreshTreasury(true));
+    $("tCompound").checked = compound;
+    $("tCompound").onchange = (e) => tx("setCompoundDev", [e.target.checked], cfg.treasury, treasuryAbi).finally(() => refreshTreasury(true));
+    // Only mature stake can leave (staked SQK matures at the next ten-minute round).
+    const s = await pub.readContract({ address: cfg.staking, abi: stakingAbi, functionName: "stakeOf", args: [cfg.treasury] }).catch(() => null);
+    const mature = s ? s[0] - s[1] : 0n;
+    const amount = mature < devStaked ? mature : devStaked;
+    $("tUnstake").disabled = amount === 0n;
+    $("tUnstake").onclick = async () => {
+      const [fee] = await pub.readContract({ address: cfg.staking, abi: stakingAbi, functionName: "quoteUnstake", args: [cfg.treasury, amount] });
+      if (!confirm(`Unstake ${sqk(amount)}? Squeekchain's exit fee right now is ${sqk(fee)}, burned; ${sqk(amount - fee)} comes back to your share.`)) return;
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
+      await tx("unstakeDev", [amount, fee, deadline], cfg.treasury, treasuryAbi).finally(() => refreshTreasury(true));
+    };
+  }
   $("tDevWithdraw").disabled = dev === 0n;
   $("tDevWithdraw").onclick = () => tx("withdrawDev", [me, dev], cfg.treasury, treasuryAbi).finally(() => refreshTreasury(true));
 }
@@ -1059,6 +1106,17 @@ $("tSplitSave").onclick = async () => {
     await tx("setGameShare", [pct * 100], cfg.treasury, treasuryAbi);
   } finally {
     await loadSplit();
+    refreshTreasury(true);
+  }
+};
+$("tMerge").onclick = async () => {
+  const [a, b] = mergeOrder;
+  if (!a || !b) return;
+  if (!confirm(`Merge Squeek #${b.dataset.tokenId} into #${a.dataset.tokenId}? #${b.dataset.tokenId} is burned for good and #${a.dataset.tokenId} becomes level ${Number(a.dataset.level) + 1}.`)) return;
+  try {
+    await tx("mergeNfts", [a.dataset.collection, BigInt(a.dataset.tokenId), BigInt(b.dataset.tokenId)], cfg.treasury, treasuryAbi);
+    levels.delete(`${a.dataset.collection}:${a.dataset.tokenId}`.toLowerCase());
+  } finally {
     refreshTreasury(true);
   }
 };

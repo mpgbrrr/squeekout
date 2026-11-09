@@ -253,3 +253,7 @@ table.results .tag { display: block; width: max-content; margin: 4px 0 0 auto; }
 .split-row input { width: 3.4em; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
   font-family: var(--mono); text-align: center; }
 .split-row small { flex-basis: 100%; }
+.stake-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 14px; font-size: 0.9rem; }
+.stake-row p { flex-basis: 100%; margin: 0; }
+.stake-row .check { flex-basis: 100%; display: flex; align-items: center; gap: 6px; }
+.stake-row small, #tMergeNote { flex-basis: 100%; display: block; margin-top: 6px; }
