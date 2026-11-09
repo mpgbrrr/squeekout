@@ -6,7 +6,7 @@
   "address": "0xbf9F6f619F5400295190fb996C431Cd4c7712D4a",
   "proxy": "UUPS",
   "implementation": "0x2d2c010282744f5816e33b1d5ed97d1912b2c236",
-  "treasury": "0xF61F0507efe7FBaa3FB2f8a52E80c5DdA1eE22E7",
+  "treasury": "0x19a5f368b5624893ea9C4790937b5EA7bE4fEb57",
   "treasuryOwner": "0x1C7E5e9EA41bD25F666a0912c0A182ffB12E2013",
   "staking": "0x50fd1780526c3186a0c037c7622203bc4fb611ca",
   "sqk": "0xd78a3956cF63164d1Fa1C622ad3c66623162Fa1e",
@@ -30,6 +30,10 @@
     {
       "address": "0xaa85fb592746A3129d2614D975073abE48097F0C",
       "replaced": "2026-11-05"
+    },
+    {
+      "address": "0xF61F0507efe7FBaa3FB2f8a52E80c5DdA1eE22E7",
+      "replaced": "2026-11-09"
     }
   ]
 }
